@@ -31,8 +31,11 @@ apps:
     environment:
       # cpal reaches the sound server through ALSA, so the snap carries the ALSA
       # PulseAudio plugin and a config that routes the default device to it.
+      # alsa-lib dlopens its plugins out of ALSA_PLUGIN_DIR, not off the linker path,
+      # and snapd expands only its own $SNAP_* variables here, never a craft one, so
+      # the directory the plugins are moved to in override-prime carries no triplet.
       ALSA_CONFIG_PATH: $SNAP/etc/asound.conf
-      LD_LIBRARY_PATH: $SNAP/usr/lib/$CRAFT_ARCH_TRIPLET_BUILD_FOR/alsa-lib:$LD_LIBRARY_PATH
+      ALSA_PLUGIN_DIR: $SNAP/usr/lib/alsa-lib
     plugs:
       - audio-playback
       - network
@@ -143,3 +146,17 @@ parts:
       # The Vulkan ICD comes from the gpu-2404 provider, which the gnome extension
       # points the loader at; a driver staged here would only shadow it.
       - -usr/share/vulkan/icd.d
+    override-prime: |
+      craftctl default
+
+      # libasound2-plugins installs under an architecture triplet, which ALSA_PLUGIN_DIR
+      # cannot name: it is read by snapd, which expands no craft variable. Moving the
+      # plugins to one path spells the same thing on amd64 and arm64.
+      triplet="$(dirname "$(find "$CRAFT_PRIME/usr/lib" -maxdepth 3 -type d -name alsa-lib -print -quit)")"
+      if [ -n "$triplet" ] && [ "$triplet" != "$CRAFT_PRIME/usr/lib" ]; then
+        mkdir -p "$CRAFT_PRIME/usr/lib/alsa-lib"
+        mv "$triplet/alsa-lib"/* "$CRAFT_PRIME/usr/lib/alsa-lib/"
+        rmdir "$triplet/alsa-lib"
+      fi
+      test -f "$CRAFT_PRIME/usr/lib/alsa-lib/libasound_module_pcm_pulse.so"
+      test -f "$CRAFT_PRIME/usr/lib/alsa-lib/libasound_module_conf_pulse.so"

@@ -507,6 +507,9 @@ jobs:
           grep -qx 'squashfs-root/usr/bin/sonora' <<<"$list"
           grep -qx 'squashfs-root/usr/share/applications/sonora.desktop' <<<"$list"
           grep -qx 'squashfs-root/etc/asound.conf' <<<"$list"
+          # ALSA_PLUGIN_DIR names one triplet-free path, so the PulseAudio plugin the
+          # asound.conf routes to has to have been moved there.
+          grep -qx 'squashfs-root/usr/lib/alsa-lib/libasound_module_pcm_pulse.so' <<<"$list"
           grep -qx 'squashfs-root/usr/share/doc/sonora/THIRD-PARTY.md' <<<"$list"
           # The Vulkan ICD has to come from the gpu-2404 provider, never from the snap.
           if grep -q 'squashfs-root/usr/share/vulkan/icd.d' <<<"$list"; then
