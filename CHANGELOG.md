@@ -57,6 +57,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- An LRC line that ends with its own timestamp, such as `[00:12.00]lyric[00:15.00]`, keeps the
+  words and drops the closing stamp from the text.
 - Signing in to Spotify works on accounts whose username holds a letter outside ASCII, such as
   an ö, instead of failing straight after authentication.
 - The fullscreen button works right after picking a language or a typeface in Settings, instead
