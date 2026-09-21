@@ -12,7 +12,8 @@ const PNG: &[u8] = include_bytes!("../../../../assets/tray/sonora.png");
 const FLATPAK_INFO: &str = "/.flatpak-info";
 
 pub struct Icon {
-    /// The item as it stands, to spawn a fresh service with when the icon comes back.
+    /// What a fresh service is spawned from when the icon comes back. It only follows `show`
+    /// while the icon is out, since `Tray::place` publishes again right after the spawn.
     item: Item,
     handle: Option<Handle<Item>>,
 }
@@ -63,12 +64,13 @@ impl Icon {
     }
 
     pub fn show(&mut self, shown: &Shown) {
-        self.item.shown = Some(shown.clone());
-        let Some(handle) = &self.handle else {
-            return;
-        };
         let shown = shown.clone();
-        handle.update(|item| item.shown = Some(shown));
+        match &self.handle {
+            Some(handle) => {
+                handle.update(|item| item.shown = Some(shown));
+            }
+            None => self.item.shown = Some(shown),
+        }
     }
 }
 

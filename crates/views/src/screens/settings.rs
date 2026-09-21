@@ -126,6 +126,7 @@ enum Slot {
     Entries,
     Language,
     Tray,
+    TrayIcon,
     Accounts,
     LocalFolder,
     Theme,
@@ -520,17 +521,25 @@ impl SettingsView {
 
     fn tab_slots(&self, tab: SettingsTab, cx: &App) -> Vec<Slot> {
         match tab {
-            SettingsTab::General => vec![
-                Slot::Startup,
-                Slot::Entries,
-                Slot::Language,
-                Slot::Title("settings-group-window"),
-                Slot::Tray,
-                Slot::Title("settings-group-accounts"),
-                Slot::Accounts,
-                Slot::Title("settings-group-library"),
-                Slot::LocalFolder,
-            ],
+            SettingsTab::General => {
+                let mut slots = vec![
+                    Slot::Startup,
+                    Slot::Entries,
+                    Slot::Language,
+                    Slot::Title("settings-group-window"),
+                    Slot::Tray,
+                ];
+                if self.settings.read(cx).close_to_tray() {
+                    slots.push(Slot::TrayIcon);
+                }
+                slots.extend([
+                    Slot::Title("settings-group-accounts"),
+                    Slot::Accounts,
+                    Slot::Title("settings-group-library"),
+                    Slot::LocalFolder,
+                ]);
+                slots
+            }
             SettingsTab::Appearance => vec![
                 Slot::Title("settings-tab-general"),
                 Slot::Theme,
@@ -630,6 +639,7 @@ impl SettingsView {
                 t!("settings-close-to-tray"),
                 t!("settings-close-to-tray-detail"),
             ),
+            Slot::TrayIcon => (t!("settings-tray-icon"), t!("settings-tray-icon-detail")),
             Slot::Accounts => {
                 let detail = t!("settings-accounts-detail");
                 let names = self.account_words(cx);
@@ -860,6 +870,7 @@ impl SettingsView {
             Slot::Entries => self.entries_row(cx).element,
             Slot::Language => self.language_row(cx).element,
             Slot::Tray => self.tray_row(cx).element,
+            Slot::TrayIcon => self.tray_icon_row(cx).element,
             Slot::Accounts => self.accounts_row(cx).element,
             Slot::LocalFolder => self.local_folder_row(cx).element,
             Slot::Theme => self.theme_row(cx).element,
@@ -1947,6 +1958,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.settings
                         .update(cx, |settings, cx| settings.set_close_to_tray(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn tray_icon_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).tray_icon();
+
+        self.row(
+            t!("settings-tray-icon"),
+            t!("settings-tray-icon-detail"),
+            muted,
+            small,
+            Switch::new("tray-icon", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_tray_icon(!on, cx));
                 }))
                 .into_any_element(),
         )

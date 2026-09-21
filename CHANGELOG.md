@@ -9,9 +9,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
-- Keep playing when closed is now Keep running in the background, and turning it off also takes
-  Sonora out of the system tray, the menu bar on macOS, rather than leaving an icon there that
-  lasts only as long as a window does. Settings > General > Window
+- Keep playing when closed is now Keep running in the background, and the tray icon, the menu bar
+  on macOS, only shows while it is on. A new Show in the system tray switch under it lets you hide
+  the icon anyway. Settings > General > Window
 
 - An artist page opens as soon as their profile and popular tracks arrive, and fills its
   releases in behind that, so an artist with a thousand of them no longer leaves the page

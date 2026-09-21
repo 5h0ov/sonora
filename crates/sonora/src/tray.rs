@@ -169,9 +169,11 @@ impl Tray {
         tray
     }
 
-    /// Puts the icon in the tray, or takes it out, to follow `close_to_tray`.
+    /// Puts the icon in the tray, or takes it out. It follows `tray_icon`, but only while
+    /// `close_to_tray` is on, which keeps the choice for when the app runs in the background again.
     fn place(&mut self, cx: &mut Context<Self>) {
-        let placed = Sonora::global(cx).settings.read(cx).close_to_tray();
+        let settings = Sonora::global(cx).settings.read(cx);
+        let placed = settings.close_to_tray() && settings.tray_icon();
         if placed == self.placed {
             return;
         }
