@@ -120,6 +120,13 @@ impl Icon {
         })
     }
 
+    /// The status item stays alive either way, so the menu and its handlers survive a round trip.
+    pub fn placed(&mut self, placed: bool) {
+        if let Err(error) = self.icon.set_visible(placed) {
+            log::warn!("tray: cannot place the tray icon: {error:#}");
+        }
+    }
+
     pub fn show(&mut self, shown: &Shown) {
         // the status notifier hosts read the caption off the tooltip themselves; here it has to
         // be pushed, or hovering the icon only ever says Sonora

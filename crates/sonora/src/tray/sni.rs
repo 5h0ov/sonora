@@ -12,7 +12,9 @@ const PNG: &[u8] = include_bytes!("../../../../assets/tray/sonora.png");
 const FLATPAK_INFO: &str = "/.flatpak-info";
 
 pub struct Icon {
-    handle: Handle<Item>,
+    /// The item as it stands, to spawn a fresh service with when the icon comes back.
+    item: Item,
+    handle: Option<Handle<Item>>,
 }
 
 impl Icon {
@@ -41,25 +43,50 @@ impl Icon {
             pixmap,
             shown: None,
         };
-        // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
-        // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
-        // accepts the unique bus name instead.
-        let sandboxed = std::path::Path::new(FLATPAK_INFO).exists();
-        match item.disable_dbus_name(sandboxed).spawn() {
-            Ok(handle) => Some(Self { handle }),
-            Err(error) => {
-                log::warn!("tray: cannot reach the status notifier host: {error}");
-                None
-            }
+        let handle = spawn(item.clone())?;
+        Some(Self {
+            item,
+            handle: Some(handle),
+        })
+    }
+
+    /// A host draws every item that is registered, so leaving the bus is the only way out.
+    pub fn placed(&mut self, placed: bool) {
+        if placed == self.handle.is_some() {
+            return;
+        }
+        match self.handle.take() {
+            // the request is sent, not awaited: the item leaves the bus either way
+            Some(handle) => drop(handle.shutdown()),
+            None => self.handle = spawn(self.item.clone()),
         }
     }
 
     pub fn show(&mut self, shown: &Shown) {
+        self.item.shown = Some(shown.clone());
+        let Some(handle) = &self.handle else {
+            return;
+        };
         let shown = shown.clone();
-        self.handle.update(|item| item.shown = Some(shown));
+        handle.update(|item| item.shown = Some(shown));
     }
 }
 
+fn spawn(item: Item) -> Option<Handle<Item>> {
+    // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
+    // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
+    // accepts the unique bus name instead.
+    let sandboxed = std::path::Path::new(FLATPAK_INFO).exists();
+    match item.disable_dbus_name(sandboxed).spawn() {
+        Ok(handle) => Some(handle),
+        Err(error) => {
+            log::warn!("tray: cannot reach the status notifier host: {error}");
+            None
+        }
+    }
+}
+
+#[derive(Clone)]
 struct Item {
     sender: UnboundedSender<Event>,
     pixmap: Vec<ksni::Icon>,

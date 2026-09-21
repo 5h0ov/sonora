@@ -98,6 +98,7 @@ pub fn install(show: impl Fn(&mut App) + 'static, cx: &mut App) -> bool {
 pub struct Tray {
     icon: Icon,
     shown: Shown,
+    placed: bool,
     /// The cover the art below was loaded from, so a repeat of the same track loads nothing.
     cover: Option<String>,
     art: Option<Art>,
@@ -146,6 +147,10 @@ impl Tray {
             .detach();
         let queue = Sonora::global(cx).queue.clone();
         cx.observe(&queue, |this, _, cx| this.publish(cx)).detach();
+        // only `place` here: settings notifies on every window move, and rebuilding `Shown`
+        // allocates the caption and clones the cover each time
+        let settings = Sonora::global(cx).settings.clone();
+        cx.observe(&settings, |this, _, cx| this.place(cx)).detach();
 
         let shown = shown(None, cx);
         icon.show(&shown);
@@ -153,13 +158,34 @@ impl Tray {
         let mut tray = Self {
             icon,
             shown,
+            placed: true,
             cover: None,
             art: None,
             artwork: None,
             _events,
         };
+        tray.place(cx);
         tray.follow(cx);
         tray
+    }
+
+    /// Puts the icon in the tray, or takes it out, to follow `close_to_tray`.
+    fn place(&mut self, cx: &mut Context<Self>) {
+        let placed = Sonora::global(cx).settings.read(cx).close_to_tray();
+        if placed == self.placed {
+            return;
+        }
+        self.placed = placed;
+        self.icon.placed(placed);
+        if !placed {
+            return;
+        }
+        // the cover of whatever is playing went unfetched while the icon was out, so forget
+        // the one `follow` last saw and let it load again
+        if self.art.is_none() {
+            self.cover = None;
+        }
+        self.publish(cx);
     }
 
     fn publish(&mut self, cx: &mut Context<Self>) {
@@ -189,7 +215,11 @@ impl Tray {
 
         self.cover = cover.clone();
         self.art = None;
-        self.artwork = cover.map(|cover| self.load(cover, cx));
+        // only the tray menu draws the cover, so an icon that is out of the tray fetches none
+        self.artwork = match self.placed {
+            true => cover.map(|cover| self.load(cover, cx)),
+            false => None,
+        };
     }
 
     fn load(&self, cover: String, cx: &mut Context<Self>) -> Task<()> {

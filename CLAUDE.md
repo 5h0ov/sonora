@@ -902,18 +902,22 @@ Edit and Window menus there alone.
 
 **The tray outlives the window.** `sonora/src/tray.rs` owns one `Tray` entity driven by two
 backends: `tray/native.rs` (`tray-icon`, macOS and Windows) and `tray/sni.rs` (`ksni`, Linux over
-D-Bus, no gtk). Both expose the same `Icon::new(sender) -> Option<Icon>` / `Icon::show(&Shown)`
-pair; the entity turns tray events into `Playback` calls the way `state::remote` does and rebuilds
-the labels from `t!` on every playback change, so they follow the language. `install` returns
-`false` when no tray can be placed — no StatusNotifierWatcher on the bus, say — and
-`actions::register` then keeps the old quit-on-last-window behaviour, so a headless Sonora never
-lingers unreachable. With a tray and `close_to_tray` on, the last window closing only flips
-`dock::show(false)` (Accessory policy on macOS; a no-op elsewhere) and `show_window` in `main.rs`
-brings it back from the tray, a Dock relaunch (`on_reopen`) or a `spotify:` link. `ksni` must stay
-on `async-io`: `gpui_linux` already drives `zbus` on that executor, and mixing in `zbus/tokio`
-panics at runtime. The icons come from `assets/tray/`, which `scripts/generate-icons.py` derives
-from the master like every other artefact — a template glyph for the macOS menu bar, the round
-one for Windows and Linux.
+D-Bus, no gtk). Both expose the same `Icon::new(sender) -> Option<Icon>` / `Icon::show(&Shown)` /
+`Icon::placed(bool)` triple; the entity turns tray events into `Playback` calls the way
+`state::remote` does and rebuilds the labels from `t!` on every playback change, so they follow
+the language. `install` returns `false` when no tray can be placed — no StatusNotifierWatcher on
+the bus, say — and `actions::register` then keeps the old quit-on-last-window behaviour, so a
+headless Sonora never lingers unreachable. `close_to_tray` is the same question asked of the user,
+so it places the icon as well as holding the app open: `Tray::place` follows it, `tray-icon` hides
+the status item and `ksni` leaves the bus altogether, since a status notifier host draws whatever
+is registered. There is no second setting for the icon, because an icon the app quits out from
+under would only ever be there while a window is. With a tray and `close_to_tray` on, the last
+window closing only flips `dock::show(false)` (Accessory policy on macOS; a no-op elsewhere) and
+`show_window` in `main.rs` brings it back from the tray, a Dock relaunch (`on_reopen`) or a
+`spotify:` link. `ksni` must stay on `async-io`: `gpui_linux` already drives `zbus` on that
+executor, and mixing in `zbus/tokio` panics at runtime. The icons come from `assets/tray/`, which
+`scripts/generate-icons.py` derives from the master like every other artefact — a template glyph
+for the macOS menu bar, the round one for Windows and Linux.
 
 **Assets.** `crates/sonora/src/assets.rs` answers GPUI for both icons and fonts: icons come from
 the `icons` crate, fonts from a `FONTS` table its build script writes by walking `assets/fonts`.
