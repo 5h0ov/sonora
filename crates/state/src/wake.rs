@@ -2,7 +2,7 @@ use gpui::{Context, Entity};
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use tokio::sync::watch;
 
-use crate::{Io, Playback, PlaybackState};
+use crate::{AppSettings, Io, Playback, PlaybackState};
 
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Want {
@@ -11,6 +11,7 @@ struct Want {
 }
 
 pub struct Wake {
+    settings: Entity<AppSettings>,
     playback: Entity<Playback>,
     fullscreen: bool,
     focused: bool,
@@ -22,7 +23,13 @@ pub struct Wake {
 }
 
 impl Wake {
-    pub fn new(playback: Entity<Playback>, io: Io, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        settings: Entity<AppSettings>,
+        playback: Entity<Playback>,
+        io: Io,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        cx.observe(&settings, |this, _, cx| this.apply(cx)).detach();
         cx.observe(&playback, |this, _, cx| this.apply(cx)).detach();
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
@@ -35,6 +42,7 @@ impl Wake {
         let _ = io;
 
         Self {
+            settings,
             playback,
             fullscreen: false,
             focused: false,
@@ -57,10 +65,11 @@ impl Wake {
     }
 
     fn apply(&mut self, cx: &mut Context<Self>) {
-        let playing = *self.playback.read(cx).state() == PlaybackState::Playing;
+        let enabled = self.settings.read(cx).stay_awake();
+        let playing = enabled && *self.playback.read(cx).state() == PlaybackState::Playing;
         let want = Want {
-            system: playing,
-            display: playing && self.fullscreen && self.focused,
+            system: enabled && playing,
+            display: enabled && playing && self.fullscreen && self.focused,
         };
         if want == self.applied {
             return;

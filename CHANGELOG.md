@@ -23,7 +23,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - On Linux the desktop media widget shows Sonora's icon and has shuffle and repeat buttons that
   stay in step with the player bar.
 - Sonora keeps the computer awake while music plays and if the fullscreen view is active, keeps
-  the screen on as well.
+  the screen on as well. This can be disabled in settings.
 
 ### Changed
 

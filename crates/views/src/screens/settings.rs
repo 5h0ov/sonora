@@ -163,6 +163,7 @@ enum Slot {
     Normalisation,
     Gapless,
     Sleep,
+    StayAwake,
     Widevine,
     Equalizer,
     EqualizerPreset,
@@ -604,6 +605,7 @@ impl SettingsView {
                     Slot::Normalisation,
                     Slot::Gapless,
                     Slot::Sleep,
+                    Slot::StayAwake,
                 ];
                 if self.drm.read(cx).shown(cx) {
                     slots.push(Slot::Widevine);
@@ -750,6 +752,7 @@ impl SettingsView {
             ),
             Slot::Gapless => (t!("settings-gapless"), t!("settings-gapless-detail")),
             Slot::Sleep => (t!("settings-sleep"), t!("settings-sleep-detail")),
+            Slot::StayAwake => (t!("settings-stay-awake"), t!("settings-stay-awake-detail")),
             Slot::Widevine => {
                 let (detail, _) = widevine_copy(self.drm.read(cx).state());
                 (t!("settings-widevine"), i18n::lookup(detail, None))
@@ -955,6 +958,7 @@ impl SettingsView {
             Slot::Normalisation => self.playback_row(cx).element,
             Slot::Gapless => self.gapless_row(cx).element,
             Slot::Sleep => self.sleep_row(cx).element,
+            Slot::StayAwake => self.stay_awake_row(cx).element,
             Slot::Widevine => self.widevine_row(cx).element,
             Slot::Equalizer => self.equalizer_row(cx).element,
             Slot::EqualizerPreset => self.equalizer_preset_row(cx).element,
@@ -2104,6 +2108,26 @@ impl SettingsView {
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.playback
                         .update(cx, |playback, cx| playback.set_gapless(!on, cx));
+                }))
+                .into_any_element(),
+        )
+    }
+
+    fn stay_awake_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).stay_awake();
+
+        self.row(
+            t!("settings-stay-awake"),
+            t!("settings-stay-awake-detail"),
+            muted,
+            small,
+            Switch::new("stay-awake", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_stay_awake(!on, cx));
                 }))
                 .into_any_element(),
         )
