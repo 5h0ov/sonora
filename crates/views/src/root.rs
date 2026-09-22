@@ -207,6 +207,10 @@ impl Root {
         })
         .detach();
 
+        cx.observe_window_activation(window, |_, window, cx| update_focus_for_wake(window, cx))
+            .detach();
+        update_focus_for_wake(window, cx);
+
         window
             .observe_window_appearance(|_, cx| {
                 let settings = Sonora::global(cx).settings.clone();
@@ -465,6 +469,10 @@ impl Root {
 
     fn show(&mut self, destination: Destination, cx: &mut Context<Self>) {
         clear_listing(cx);
+        let wake = Sonora::global(cx).wake.clone();
+        wake.update(cx, |wake, cx| {
+            wake.set_fullscreen(matches!(destination, Destination::Fullscreen), cx);
+        });
         // Leaving settings is what clears the note about the last scan, so every move tells it.
         let settings = matches!(destination, Destination::Settings(_));
         Scan::global(cx).update(cx, |scan, cx| scan.viewing_settings(settings, cx));
@@ -614,6 +622,12 @@ fn scripts(custom: bool) -> &'static FontFallbacks {
         }),
         false => BUNDLED.get_or_init(|| FontFallbacks::from_fonts(named().collect())),
     }
+}
+
+fn update_focus_for_wake(window: &Window, cx: &mut App) {
+    let focused = window.is_window_active();
+    let wake = Sonora::global(cx).wake.clone();
+    wake.update(cx, |wake, cx| wake.set_focused(focused, cx));
 }
 
 impl Render for Root {
