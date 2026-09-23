@@ -29,9 +29,12 @@ impl OutputSink {
 }
 
 impl Sink for OutputSink {
+    /// librespot decodes everything at `SAMPLE_RATE`, so this is the one place the output
+    /// follows it, before the first packet of a play.
     fn start(&mut self) -> SinkResult<()> {
         self.paced
-            .play()
+            .fit(SAMPLE_RATE)
+            .and_then(|()| self.paced.play())
             .map_err(|error| SinkError::OnWrite(error.to_string()))
     }
 

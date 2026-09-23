@@ -14,6 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sonora picks up changes to `settings.json` while it runs, so a script that rewrites your theme
   colours from the wallpaper recolours the app right away, without a restart. If the file has
   an error, Sonora tells you which line and saves nothing until it is fixed.
+- Sonora plays every track at its own sample rate rather than resampling it to the device
+  default, so a 96 kHz FLAC leaves the app at 96 kHz. Moving between tracks of different rates
+  leaves a short pause.
+- Albanian (Shqip) interface language.
 
 ### Changed
 

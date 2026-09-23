@@ -7,10 +7,14 @@
 //! the preload, the gapless join, where a position is reported from, and what a lost output
 //! device does.
 //!
-//! A provider supplies [`Fetch`]: how to get a track and how to open a decoder over it. Three
-//! do today, and they differ in about sixty lines each. Subsonic hands over a plain response,
-//! Deezer decrypts Blowfish stripes as they arrive, and Apple Music indexes CENC fragments and
-//! decrypts each sample through a CDM as the decoder reaches it.
+//! A provider supplies [`Fetch`]: how to get a track and how to open a decoder over it. Every
+//! provider but Spotify does, whose decoding librespot owns. Local reads a file from disk,
+//! YouTube downloads the whole track, Subsonic hands over a plain response, Deezer decrypts
+//! Blowfish stripes as they arrive, and Apple Music indexes CENC fragments and decrypts each
+//! sample through a CDM as the decoder reaches it.
+//!
+//! Loudness normalisation lives here too. A provider only reports how loud a track is, and the
+//! engine decides what gain that earns.
 
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, TryRecvError, channel};
@@ -29,6 +33,9 @@ use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, Player};
 /// How many frames the decoder hands over at a time. Small enough that a skip is heard at once,
 /// large enough that the queue is not rebuilt for every few samples.
 const CHUNK: usize = 4096;
+/// The most normalisation may raise a track. At unity a quiet track stays as it is and only a
+/// loud one is turned down, so normalising can never clip.
+const NORMAL_CAP: f32 = 1.0;
 
 /// What the engine needs from a provider, and all it needs.
 ///
@@ -54,6 +61,18 @@ pub trait Fetch: Send + Sync + 'static {
     /// has something to draw before the decoder knows.
     fn length(&self, _loaded: &Self::Loaded) -> Option<Duration> {
         None
+    }
+
+    /// How many dB the track sits above the provider's reference level, when the provider
+    /// publishes it. The engine turns this into the track's gain when normalisation is on.
+    fn loudness(&self, _loaded: &Self::Loaded) -> Option<f32> {
+        None
+    }
+
+    /// Whether a failed load means the listener has to sign in. The engine reports that as
+    /// gated rather than as the track being unavailable.
+    fn gated(&self, _error: &anyhow::Error) -> bool {
+        false
     }
 
     /// Opens a decoder placed at `at`. `None` means the track cannot be played, which the
@@ -254,7 +273,7 @@ async fn engine_loop<F: Fetch>(
     let (cue, mut written) = Cue::new();
     let (changed, mut gone) = unbounded_channel();
     // The user's gain, the shared equalizer and the spectrum tap: what every engine hands the
-    // output. A provider that knows a track's loudness applies it inside its own decoder.
+    // output. A track's own loudness gain is applied as it is decoded, in `Playing`.
     let chain = Chain {
         volume: Volume::new(config.gain),
         equalizer: config.equalizer.clone(),
@@ -267,6 +286,7 @@ async fn engine_loop<F: Fetch>(
     let audio_events = events.clone();
     let audio_fetch = fetch.clone();
     let interval = config.position_interval;
+    let normalisation = config.normalisation;
     let spawned = std::thread::Builder::new()
         .name(format!("{}-audio", fetch.name()))
         .spawn(move || {
@@ -279,6 +299,7 @@ async fn engine_loop<F: Fetch>(
                 joins,
                 audio_events,
                 interval,
+                normalisation,
             )
         });
     if let Err(error) = spawned {
@@ -428,7 +449,11 @@ async fn engine_loop<F: Fetch>(
                             awaited = None;
                             inflight = None;
                             announcing = None;
-                            events.send(PlaybackEvent::Unavailable { id: Some(id) }).ok();
+                            let refusal = match fetch.gated(&error) {
+                                true => PlaybackEvent::Gated,
+                                false => PlaybackEvent::Unavailable { id: Some(id) },
+                            };
+                            events.send(refusal).ok();
                         }
                         continue;
                     }
@@ -568,12 +593,23 @@ struct Playing<F: Fetch> {
     /// Samples queued before this track's first one. On a gapless join the one before it is
     /// still being heard, so its own position only starts once the count passes this.
     offset: u64,
+    /// The track's normalisation gain, applied to every sample as it is decoded. Each track
+    /// carries its own, so a gapless join changes it on the first sample of the next one.
+    gain: f32,
 }
 
 impl<F: Fetch> Playing<F> {
     /// Opens a decoder for one track, or reports that it cannot be played.
-    fn open(fetch: &F, id: &str, loaded: F::Loaded, at: Duration, offset: u64) -> Option<Self> {
+    fn open(
+        fetch: &F,
+        id: &str,
+        loaded: F::Loaded,
+        at: Duration,
+        offset: u64,
+        normalise: bool,
+    ) -> Option<Self> {
         let source = fetch.open(id, &loaded, at)?;
+        let gain = normalisation(normalise, fetch.loudness(&loaded));
         Some(Self {
             id: id.to_owned(),
             channels: source.channels().get(),
@@ -582,6 +618,7 @@ impl<F: Fetch> Playing<F> {
             source,
             base: at,
             offset,
+            gain,
         })
     }
 
@@ -600,7 +637,7 @@ impl<F: Fetch> Playing<F> {
         let wanted = frames * usize::from(self.channels).max(1);
         let mut samples = Vec::with_capacity(wanted);
         for sample in self.source.by_ref().take(wanted) {
-            samples.push(sample);
+            samples.push(sample * self.gain);
         }
         (!samples.is_empty()).then_some(samples)
     }
@@ -645,6 +682,7 @@ fn audio_loop<F: Fetch>(
     joins: UnboundedSender<Joined>,
     events: UnboundedSender<PlaybackEvent>,
     interval: Duration,
+    normalise: bool,
 ) {
     let mut paced = match Paced::open(cue.clone(), chain, changed) {
         Ok(paced) => paced,
@@ -660,10 +698,15 @@ fn audio_loop<F: Fetch>(
     let mut reported_at = Instant::now();
 
     loop {
+        // a track at another rate waits for the last one's tail to play out before the
+        // output reopens under it
+        let refitting = current
+            .as_ref()
+            .is_some_and(|held| !paced.fits(held.rate) && !paced.drained());
         // anything but decoding means waiting for work rather than spinning: no
         // track, a paused one, or a full queue. A restored track sits paused
         // with an empty queue, which the old condition mistook for decoding.
-        let idle = current.is_none() || !playing || paced.full();
+        let idle = current.is_none() || !playing || paced.full() || refitting;
         let job = match idle {
             false => match jobs.try_recv() {
                 Ok(job) => Some(job),
@@ -723,7 +766,12 @@ fn audio_loop<F: Fetch>(
                     queued = None;
                     joining = None;
                     written = 0;
-                    current = Playing::open(fetch.as_ref(), &id, loaded, at, 0);
+                    current = Playing::open(fetch.as_ref(), &id, loaded, at, 0, normalise);
+                    if let Some(held) = &current
+                        && paced.fit(held.rate).is_err()
+                    {
+                        return;
+                    }
                     heard = current.as_ref().map(Playing::mark);
                     playing = start && current.is_some();
                     match playing {
@@ -785,7 +833,8 @@ fn audio_loop<F: Fetch>(
                         // has moved.
                         true => {
                             let (id, loaded) = (held.id.clone(), held.loaded.clone());
-                            match Playing::open(fetch.as_ref(), &id, loaded, position, 0) {
+                            match Playing::open(fetch.as_ref(), &id, loaded, position, 0, normalise)
+                            {
                                 Some(fresh) => current = Some(fresh),
                                 None => {
                                     log::warn!("playback: cannot seek {id}");
@@ -815,13 +864,23 @@ fn audio_loop<F: Fetch>(
         if idle {
             continue;
         }
+        if paced.fit(held.rate).is_err() {
+            return;
+        }
 
         let Some(samples) = held.take(CHUNK) else {
             // the decoder is done, but its last samples are still queued
             let ended = current.take().map(|held| held.id).unwrap_or_default();
             let next = queued.take().and_then(|(id, loaded)| {
                 let duration = fetch.length(&loaded);
-                current = Playing::open(fetch.as_ref(), &id, loaded, Duration::ZERO, written);
+                current = Playing::open(
+                    fetch.as_ref(),
+                    &id,
+                    loaded,
+                    Duration::ZERO,
+                    written,
+                    normalise,
+                );
                 current.as_ref().map(|_| (id, duration))
             });
             joins
@@ -849,9 +908,31 @@ fn audio_loop<F: Fetch>(
     }
 }
 
+/// The gain a track plays at: unity with normalisation off or no loudness known, and otherwise
+/// whatever brings it down to the reference level, never above `NORMAL_CAP`.
+fn normalisation(enabled: bool, loudness_db: Option<f32>) -> f32 {
+    match (enabled, loudness_db) {
+        (true, Some(db)) => 10f32.powf(-db / 20.0).min(NORMAL_CAP),
+        _ => 1.0,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn normalisation_attenuates_loud_tracks() {
+        let factor = normalisation(true, Some(6.0));
+        assert!(factor < 0.51 && factor > 0.49);
+    }
+
+    #[test]
+    fn normalisation_never_boosts() {
+        assert_eq!(normalisation(true, Some(-3.0)), NORMAL_CAP);
+        assert_eq!(normalisation(false, Some(6.0)), 1.0);
+        assert_eq!(normalisation(true, None), 1.0);
+    }
 
     #[test]
     fn a_join_moves_the_engines_current_track_on() {

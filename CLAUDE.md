@@ -38,7 +38,10 @@ sonora → views → state → music
 - `music` never depends on `gpui`. `ui` never knows about `music`, `state` or playback. Widgets
   that need app state live in `views/src/chrome/`.
 - `music::engine` is the one playback engine and `music::stream` the one progressive download. A
-  provider implements `engine::Fetch` and `stream::Body` rather than writing its own.
+  provider implements `engine::Fetch` and `stream::Body` rather than writing its own. The engine
+  applies loudness normalisation, so a provider only reports a track's level through
+  `Fetch::loudness`. Spotify is the one exception, because librespot decodes and normalises
+  inside its own player.
 - `music::drm` is the only way `state` and `views` reach protected playback. The CDM is never
   shipped in any artefact or package.
 

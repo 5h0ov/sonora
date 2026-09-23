@@ -1,4 +1,4 @@
-//! The output queue both providers feed. A decoder runs on its own thread and hands finished
+//! The output queue every engine feeds. A decoder runs on its own thread and hands finished
 //! samples to `Paced`, which appends them to the shared rodio output and blocks the writer once
 //! enough is queued. Nothing here decodes or reaches the network, so the audio thread never
 //! waits on either.
@@ -262,6 +262,29 @@ impl Paced {
     /// Whether the queue holds all it should, so the next packet can wait.
     pub fn full(&self) -> bool {
         self.live.load(Ordering::Relaxed) > QUEUED_CHUNKS
+    }
+
+    /// Whether everything queued has played out or been retired. A queue on a stream that has
+    /// failed or closed never plays out, so it counts as drained.
+    pub fn drained(&self) -> bool {
+        self.live.load(Ordering::Relaxed) == 0 || self.output.failed()
+    }
+
+    /// Whether packets at `rate` can go out without the output reopening.
+    pub fn fits(&self, rate: u32) -> bool {
+        self.output.fits(rate)
+    }
+
+    /// Reopens the output for packets at `rate` unless it fits already. Anything still queued
+    /// is dropped, so a caller that wants the tail heard waits for `drained` first.
+    pub fn fit(&mut self, rate: u32) -> Result<(), Gone> {
+        match self.output.fit(rate) {
+            Ok(_) => Ok(()),
+            Err(error) => {
+                log::error!("sink: cannot reopen the audio output: {error:#}");
+                Err(self.disconnected())
+            }
+        }
     }
 
     /// Waits until there is room for another packet.
