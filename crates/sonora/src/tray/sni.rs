@@ -42,6 +42,7 @@ impl Icon {
         let item = Item {
             sender,
             pixmap,
+            icon_name: icon_name(sandboxed()),
             shown: None,
         };
         let handle = spawn(item.clone())?;
@@ -78,8 +79,7 @@ fn spawn(item: Item) -> Option<Handle<Item>> {
     // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
     // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
     // accepts the unique bus name instead.
-    let sandboxed = std::path::Path::new(FLATPAK_INFO).exists();
-    match item.disable_dbus_name(sandboxed).spawn() {
+    match item.disable_dbus_name(sandboxed()).spawn() {
         Ok(handle) => Some(handle),
         Err(error) => {
             log::warn!("tray: cannot reach the status notifier host: {error}");
@@ -92,6 +92,7 @@ fn spawn(item: Item) -> Option<Handle<Item>> {
 struct Item {
     sender: UnboundedSender<Event>,
     pixmap: Vec<ksni::Icon>,
+    icon_name: String,
     shown: Option<Shown>,
 }
 
@@ -134,7 +135,7 @@ impl ksni::Tray for Item {
     }
 
     fn icon_name(&self) -> String {
-        ICON_NAME.to_owned()
+        self.icon_name.clone()
     }
 
     fn icon_pixmap(&self) -> Vec<ksni::Icon> {
@@ -185,6 +186,21 @@ impl ksni::Tray for Item {
             self.entry(&shown.show, Event::Show),
             self.entry(&shown.quit, Event::Quit),
         ]
+    }
+}
+
+fn sandboxed() -> bool {
+    std::path::Path::new(FLATPAK_INFO).exists()
+}
+
+/// The themed icon to ask the host for, or none when the host's theme cannot be counted on to
+/// have it. A Flatpak or AppImage install puts no `sonora` icon where the host looks, and hosts
+/// such as Quickshell draw a placeholder for a name they cannot find rather than the pixmap.
+fn icon_name(sandboxed: bool) -> String {
+    let packaged = sandboxed || std::env::var_os("APPIMAGE").is_some();
+    match packaged {
+        true => String::new(),
+        false => ICON_NAME.to_owned(),
     }
 }
 

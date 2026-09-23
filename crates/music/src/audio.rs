@@ -1,6 +1,6 @@
 use std::num::NonZero;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -13,6 +13,10 @@ use crate::spectrum::{Spectrum, Tap};
 
 pub const RAMP: Duration = Duration::from_millis(25);
 const BUFFER: Duration = Duration::from_millis(50);
+
+/// The device stream every output in the process mixes into, so the sound server sees Sonora as
+/// one client however many engines are running. It closes when the last output on it drops.
+static SHARED: Mutex<Weak<Device>> = Mutex::new(Weak::new());
 
 #[derive(Clone)]
 pub struct Volume(Arc<AtomicU32>);
@@ -39,36 +43,44 @@ pub struct Chain {
     pub spectrum: Spectrum,
 }
 
-pub struct Output {
-    sink: Arc<rodio::Player>,
-    volume: Volume,
-    device: String,
+/// One open stream on an output device, with the mixer the engines' chains play into.
+struct Device {
+    id: String,
     failed: Arc<AtomicBool>,
-    _stream: MixerDeviceSink,
+    stream: MixerDeviceSink,
 }
 
-impl Output {
-    /// Claims the default output device and runs every sample through the equalizer and then
-    /// the volume ramp before it reaches the mixer.
-    pub fn open(chain: Chain) -> Result<Self> {
-        let Chain {
-            volume,
-            equalizer,
-            spectrum,
-        } = chain;
-        let host = cpal::default_host();
-        let device = host
+impl Device {
+    /// The shared stream on the default device. It opens a new one when no output holds a
+    /// healthy stream there, and a stream left on a device that is no longer the default stays
+    /// with the outputs still using it until they reopen.
+    fn shared() -> Result<Arc<Self>> {
+        let device = cpal::default_host()
             .default_output_device()
             .context("no audio output device")?;
+        let id = ident(&device);
 
+        let mut shared = SHARED.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some(open) = shared.upgrade()
+            && open.id == id
+            && !open.failed.load(Ordering::Acquire)
+        {
+            return Ok(open);
+        }
+
+        let open = Arc::new(Self::open(device, id)?);
+        *shared = Arc::downgrade(&open);
+        Ok(open)
+    }
+
+    fn open(device: cpal::Device, id: String) -> Result<Self> {
         let default = device
             .default_output_config()
             .map_err(|error| anyhow::anyhow!("cannot read the output config: {error}"))?;
 
-        let device_name = ident(&device);
         log::info!(
             "sink: using {} at {} Hz, {} channels, {}",
-            device_name,
+            id,
             default.sample_rate(),
             default.channels(),
             default.sample_format()
@@ -95,20 +107,42 @@ impl Output {
             .map_err(|error| anyhow::anyhow!("cannot open the audio output: {error}"))?;
         stream.log_on_drop(false);
 
+        Ok(Self { id, failed, stream })
+    }
+}
+
+/// One engine's player on the shared device stream. Dropping it ends the player's source in the
+/// mixer, and the stream closes once no output is left on it.
+pub struct Output {
+    sink: Arc<rodio::Player>,
+    volume: Volume,
+    device: Arc<Device>,
+}
+
+impl Output {
+    /// Joins the stream on the default output device and runs every sample through the
+    /// equalizer and then the volume ramp before it reaches the mixer.
+    pub fn open(chain: Chain) -> Result<Self> {
+        let Chain {
+            volume,
+            equalizer,
+            spectrum,
+        } = chain;
+        let device = Device::shared()?;
+
         let applied = volume.get();
         let tap = spectrum.attach();
         let (sink, source) = rodio::Player::new();
         let equalized = Equalized::new(source, equalizer);
-        stream
+        device
+            .stream
             .mixer()
             .add(SmoothGain::new(equalized, volume.clone(), applied, RAMP).with_tap(tap));
 
         Ok(Self {
             sink: Arc::new(sink),
             volume,
-            device: device_name,
-            failed,
-            _stream: stream,
+            device,
         })
     }
 
@@ -120,15 +154,17 @@ impl Output {
         self.volume.set(gain);
     }
 
+    /// Whether the device stream reported an error. Every output on the stream sees it.
     pub fn failed(&self) -> bool {
-        self.failed.load(Ordering::Acquire)
+        self.device.failed.load(Ordering::Acquire)
     }
 
+    /// Whether the system's default device is no longer the one this output plays on.
     pub fn changed(&self) -> bool {
         cpal::default_host()
             .default_output_device()
             .map(|device| ident(&device))
-            .is_some_and(|device| device != "unknown" && device != self.device)
+            .is_some_and(|device| device != "unknown" && device != self.device.id)
     }
 }
 

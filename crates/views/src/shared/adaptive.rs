@@ -1,5 +1,5 @@
 use gpui::{App, Context, Entity, Task};
-use state::{AppSettings, Playback, Queue, Sonora};
+use state::{AppSettings, Playback, Queue, Reloaded, Sonora};
 use ui::{ActiveTheme as _, CoverPalette, Look, Theme, ThemeKind};
 
 /// Drives the theme's tint from the playing track's cover, and keeps the next
@@ -40,6 +40,13 @@ impl Adaptive {
             .detach();
         cx.observe(&settings, |this, _, cx| this.sync(false, cx))
             .detach();
+        // A reload can change what the theme is built from without changing its kind or tint,
+        // so forget what was worn and paint it again.
+        cx.subscribe(&settings, |this, _, _: &Reloaded, cx| {
+            this.worn = None;
+            this.sync(false, cx);
+        })
+        .detach();
         cx.observe(&queue, |this, _, cx| this.look_ahead(cx))
             .detach();
 

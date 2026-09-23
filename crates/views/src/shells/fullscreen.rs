@@ -91,6 +91,7 @@ pub struct FullscreenView {
     track_menu: ItemMenu,
     context_menu: Option<(music::Track, Point<Pixels>)>,
     last_moved: Instant,
+    last_pos: Option<Point<Pixels>>,
     inside: bool,
     awake: bool,
     hidden: SpringState,
@@ -140,6 +141,7 @@ impl FullscreenView {
             track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
             last_moved: Instant::now(),
+            last_pos: None,
             inside: true,
             awake: true,
             hidden: SpringState {
@@ -202,6 +204,13 @@ impl FullscreenView {
             self.over_seek = seek;
             cx.notify();
         }
+        if self.last_pos == Some(event.position) {
+            if !self.awake {
+                cx.hide_cursor();
+            }
+            return;
+        }
+        self.last_pos = Some(event.position);
         self.poke(cx);
     }
 
@@ -241,6 +250,7 @@ impl FullscreenView {
         self.inside = inside;
         if !inside {
             self.over_seek = None;
+            self.last_pos = None;
             self.stir(cx);
         }
     }

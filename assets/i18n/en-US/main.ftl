@@ -861,3 +861,4 @@ trouble-offline-detail = Check your internet connection and try again.
 trouble-not-loaded = Could not load
 trouble-retry = Try again
 toast-offline = No connection. Nothing will stream until it is back.
+toast-settings-broken = Fix line { $name } of settings.json to save changes

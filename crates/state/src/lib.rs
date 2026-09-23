@@ -53,8 +53,8 @@ pub use scrobble::{ScrobbleRow, ScrobbleState, Scrobbling};
 pub use search::{AlbumHit, ArtistHit, Hit, Kind, PlaylistHit, Search};
 pub use session::{Failure, ProviderInfo, Session, SessionEvent, SessionState};
 pub use settings::{
-    AppSettings, DiscordName, FilterValue, FullscreenControlsAutohide, RomanizationScripts,
-    SYSTEM_FONT, SideTab, remember_window, window_placement,
+    AppSettings, DiscordName, FilterValue, FullscreenControlsAutohide, Reloaded,
+    RomanizationScripts, SYSTEM_FONT, SideTab, remember_window, window_placement,
 };
 pub use song::SongDetail;
 pub use tags::{TagState, Tags};
@@ -190,7 +190,12 @@ pub fn init(
     lyrics_providers: Vec<Arc<dyn LyricsProvider>>,
 ) {
     cx.set_global(io.clone());
-    let settings = cx.new(|_| AppSettings::load(database.clone()));
+    let settings = cx.new(|cx| {
+        let mut settings = AppSettings::load(database.clone());
+        settings.watch_file(cx);
+        settings.report_broken(cx);
+        settings
+    });
     let session =
         cx.new(|cx| Session::new(providers, local_provider, settings.clone(), io.clone(), cx));
     let network = cx.new(|_| Network::new(session.clone(), io.clone()));

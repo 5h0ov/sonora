@@ -14,13 +14,14 @@ use anyhow::{Context as _, Result};
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 use gpui::WindowDecorations;
 use gpui::{
-    App, Bounds, Context, DisplayId, Pixels, Size, Subscription, Task, Window, WindowBounds, point,
-    px, size,
+    App, Bounds, Context, DisplayId, EventEmitter, Pixels, Size, Subscription, Task, Window,
+    WindowBounds, point, px, size,
 };
 use music::WritingSystem;
 use music::equalizer::{self, Gains};
 use music::lyrics::LOCAL;
 use music::scrobble::Account;
+use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher as _};
 use rusqlite::{OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use storage::Database;
@@ -30,7 +31,7 @@ use ui::{
 
 use crate::pins::PinSort;
 use crate::queue::{Resume, gap_target};
-use crate::{Repeat, Sonora};
+use crate::{Outcome, Repeat, Sonora, Toasts};
 
 /// Which panel the right sidebar shows.
 /// What the Discord status calls itself. `Provider` asks the provider the track came from, so
@@ -240,6 +241,9 @@ fn system_font() -> String {
 
 /// How long a save waits after the last change, so a slider drag lands as one write.
 const SAVE_DELAY: Duration = Duration::from_millis(300);
+/// How long the watcher waits for `settings.json` to go quiet, so a program that writes it in
+/// several steps is read once, after the last one.
+const RELOAD_DELAY: Duration = Duration::from_millis(150);
 const DEFAULT_VOLUME: f32 = 0.7;
 const DEFAULT_SIDEBAR_WIDTH: f32 = 195.;
 const DEFAULT_SIDEBAR_RIGHT_WIDTH: f32 = 254.;
@@ -548,7 +552,21 @@ pub struct AppSettings {
     save_state: Option<Task<()>>,
     watch: Option<Subscription>,
     writable: bool,
+    /// What `settings.json` held when it was last read or written, so the watcher can tell our
+    /// own writes from another program's.
+    disk: Option<Vec<u8>>,
+    /// The line of the parse error while `settings.json` does not parse.
+    broken: Option<usize>,
+    /// The watch on the folder holding `settings.json`. Dropping it ends the watch.
+    watcher: Option<RecommendedWatcher>,
+    reload: Option<Task<()>>,
 }
+
+/// Emitted after another program changed `settings.json` and the new values were taken in.
+/// Whoever paints the theme repaints it, since a reload never calls `Theme::set` itself.
+pub struct Reloaded;
+
+impl EventEmitter<Reloaded> for AppSettings {}
 
 impl AppSettings {
     /// Loads from the standard config and data paths.
@@ -566,13 +584,14 @@ impl AppSettings {
                 (None, false)
             }
         };
-        let (values, writable) = match bytes.as_deref().map(serde_json::from_slice::<Values>) {
-            Some(Ok(values)) => (values, writable),
-            Some(Err(error)) => {
+        let parsed = bytes.map(|bytes| (serde_json::from_slice::<Values>(&bytes), bytes));
+        let (values, writable, disk, broken) = match parsed {
+            Some((Ok(values), bytes)) => (values, writable, Some(bytes), None),
+            Some((Err(error), _)) => {
                 log::warn!("settings: cannot parse {}: {error}", path.display());
-                (Values::default(), false)
+                (Values::default(), false, None, Some(error.line()))
             }
-            None => (Values::default(), writable),
+            None => (Values::default(), writable, None, None),
         };
 
         let state = match store.load() {
@@ -593,6 +612,23 @@ impl AppSettings {
             save_state: None,
             watch: None,
             writable,
+            disk,
+            broken,
+            watcher: None,
+            reload: None,
+        }
+    }
+
+    /// Tells the user that `settings.json` does not parse and that changes are not saved until
+    /// it does. Does nothing while the file is fine.
+    pub fn report_broken(&self, cx: &mut App) {
+        if let Some(line) = self.broken {
+            Toasts::about(
+                Outcome::Failed,
+                "toast-settings-broken",
+                line.to_string(),
+                cx,
+            );
         }
     }
 
@@ -928,7 +964,7 @@ impl AppSettings {
     }
 
     /// The path of `settings.json`, written first if it does not exist yet.
-    pub fn ensure_file(&self) -> PathBuf {
+    pub fn ensure_file(&mut self) -> PathBuf {
         if !self.path.exists() {
             self.save_now();
         }
@@ -1584,7 +1620,7 @@ impl AppSettings {
     }
 
     /// Writes `settings.json` now. Returns false and logs why when it cannot.
-    fn save_now(&self) -> bool {
+    fn save_now(&mut self) -> bool {
         if !self.writable {
             return false;
         }
@@ -1603,11 +1639,120 @@ impl AppSettings {
                 return false;
             }
         };
-        if let Err(error) = fs::write(&self.path, bytes) {
+        if let Err(error) = fs::write(&self.path, &bytes) {
             log::error!("settings: cannot write {}: {error}", self.path.display());
             return false;
         }
+        self.disk = Some(bytes);
         true
+    }
+
+    /// Watches the folder holding `settings.json` and reloads the file when another program
+    /// changes it. The folder is watched rather than the file because many tools replace the
+    /// file by renaming a new one over it, which would end a watch on the file itself.
+    pub fn watch_file(&mut self, cx: &mut Context<Self>) {
+        let (Some(folder), Some(name)) = (self.path.parent(), self.path.file_name()) else {
+            return;
+        };
+        if let Err(error) = fs::create_dir_all(folder) {
+            log::warn!("settings: cannot create {}: {error}", folder.display());
+            return;
+        }
+
+        let (sender, mut changes) = tokio::sync::mpsc::unbounded_channel();
+        let name = name.to_owned();
+        // Opening the file is an event too, so only creates and writes pass. Otherwise each
+        // reload would set off the next.
+        let watcher =
+            notify::recommended_watcher(move |result: notify::Result<Event>| match result {
+                Ok(event) => {
+                    let written = matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_));
+                    let ours = event
+                        .paths
+                        .iter()
+                        .any(|path| path.file_name() == Some(&name));
+                    if written && ours {
+                        sender.send(()).ok();
+                    }
+                }
+                Err(error) => log::warn!("settings: watch failed: {error}"),
+            });
+        let mut watcher = match watcher {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                log::warn!("settings: cannot watch {}: {error}", folder.display());
+                return;
+            }
+        };
+        if let Err(error) = watcher.watch(folder, RecursiveMode::NonRecursive) {
+            log::warn!("settings: cannot watch {}: {error}", folder.display());
+            return;
+        }
+
+        self.watcher = Some(watcher);
+        self.reload = Some(cx.spawn(async move |this, cx| {
+            while changes.recv().await.is_some() {
+                cx.background_executor().timer(RELOAD_DELAY).await;
+                while changes.try_recv().is_ok() {}
+                if this.update(cx, |this, cx| this.reload(cx)).is_err() {
+                    break;
+                }
+            }
+        }));
+    }
+
+    /// Takes in a `settings.json` that another program wrote. A file that does not parse keeps
+    /// the current values and holds back our own saves until it parses again, so a half-written
+    /// file is never overwritten. The file on disk also wins over a save still in its debounce.
+    fn reload(&mut self, cx: &mut Context<Self>) {
+        let bytes = match fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+            Err(error) => {
+                log::warn!("settings: cannot read {}: {error}", self.path.display());
+                return;
+            }
+        };
+        if self.disk.as_ref() == Some(&bytes) {
+            self.writable = true;
+            self.broken = None;
+            return;
+        }
+        let values = match serde_json::from_slice::<Values>(&bytes) {
+            Ok(values) => values,
+            Err(error) => {
+                log::warn!("settings: cannot parse {}: {error}", self.path.display());
+                self.writable = false;
+                self.broken = Some(error.line());
+                self.report_broken(cx);
+                return;
+            }
+        };
+
+        log::info!("settings: reloaded {}", self.path.display());
+        let previous = std::mem::replace(&mut self.values, values);
+        self.disk = Some(bytes);
+        self.writable = true;
+        self.broken = None;
+        self.save = None;
+        self.push_globals(&previous, cx);
+        cx.emit(Reloaded);
+        cx.notify();
+    }
+
+    /// Pushes the globals that the setters push themselves, for whatever a reload changed.
+    fn push_globals(&self, previous: &Values, cx: &mut App) {
+        let (before, now) = (&previous.appearance, &self.values.appearance);
+        if previous.language != self.values.language {
+            i18n::set(i18n::resolve(&self.values.language));
+        }
+        if before.icons != now.icons {
+            icons::set(&now.icons);
+        }
+        if before.reduce_motion != now.reduce_motion || before.motion_pace != now.motion_pace {
+            ui::motion::apply(self.stillness(), self.pace(), cx);
+        }
+        cx.refresh_windows();
     }
 }
 

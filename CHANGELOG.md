@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The Add to playlist menu has a search field at the top. Type to narrow the list, then use the
   arrow keys and Enter to pick a playlist.
+- Sonora picks up changes to `settings.json` while it runs, so a script that rewrites your theme
+  colours from the wallpaper recolours the app right away, without a restart. If the file has
+  an error, Sonora tells you which line and saves nothing until it is fixed.
 
 ### Changed
 
@@ -39,6 +42,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - An empty Apple Music playlist opens as an empty playlist rather than a "Could not load" error.
 - The library shown at launch from the last session stays whole until the provider has sent
   all of it, rather than shrinking to the first page and filling back in.
+- Sonora shows up once in your system's audio mixer, rather than once for your streaming
+  service and again for local files.
 - Guest mode is remembered again, so choosing it no longer brings the welcome screen
   back on every launch.
 - YouTube Music tracks that stopped loading with a 403 now play: Sonora sends the
@@ -50,6 +55,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Frosted menus and fields no longer turn grey under their own shadow on the light theme.
 - Menus and dialogs show their shadow from the moment they open rather than once they have
   settled.
+- The tray icon of the Flatpak and the AppImage shows the Sonora logo in trays such as Dank
+  Material Shell, which drew a missing-texture placeholder in its place.
 
 ## [0.38.0] - 2026-09-20
 
