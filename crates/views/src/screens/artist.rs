@@ -162,6 +162,7 @@ impl ArtistView {
                 },
                 playback.clone(),
                 menu_scrollbar,
+                cx,
             )
             .from({
                 let detail = detail.clone();
@@ -257,7 +258,7 @@ impl ArtistView {
             mode,
             popular_page: 0,
             popular_columns: 0,
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             track_context: None,
             settings,
             toolbar,

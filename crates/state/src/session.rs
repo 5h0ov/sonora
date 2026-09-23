@@ -119,7 +119,7 @@ pub struct Session {
     prompt_task: Option<Task<()>>,
     input: Option<UnboundedSender<String>>,
     /// The browser window a `SignInPrompt::Secret` opened, while it is up.
-    window: Option<webview::Login>,
+    window: Option<webview::Page>,
     window_task: Option<Task<()>>,
     local_provider: Arc<dyn MusicProvider>,
     local_folders: Vec<PathBuf>,
@@ -536,8 +536,9 @@ impl Session {
             proof: sign_in.proof.iter().map(ToString::to_string).collect(),
             title: t!("login-window-title", provider = provider.name()).to_string(),
             agent: sign_in.agent.map(str::to_owned),
+            script: None,
         };
-        match webview::Login::open(target) {
+        match webview::Page::open(target) {
             Ok(login) => self.window = Some(login),
             Err(error) => {
                 log::warn!("session: cannot open the sign-in window: {error:#}");

@@ -293,6 +293,7 @@ fn open_window(cx: &mut App) {
         network: _,
         pins: _,
         playback,
+        potoken: _,
         queue,
         scan: _,
         scrobbling: _,
@@ -320,7 +321,7 @@ fn open_window(cx: &mut App) {
     #[cfg(any(target_os = "linux", target_os = "freebsd"))]
     let decorations = settings.window_decorations();
     let look = settings.look();
-    let background = ui::backdrop(look.blur, look.transparent);
+    let background = ui::backdrop(look.blur_window, look.transparent);
 
     cx.open_window(
         WindowOptions {

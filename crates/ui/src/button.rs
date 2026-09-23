@@ -4,7 +4,7 @@ use gpui::{
     StyleRefinement, Window, div, px, svg,
 };
 
-use crate::glass::frost;
+use crate::glass::{blurring, frost};
 use crate::metrics::Text;
 use crate::theme::ActiveTheme as _;
 use crate::tooltip::{Perch, Tooltip};
@@ -301,6 +301,9 @@ impl RenderOnce for Button {
         let selected_background = theme.secondary_active;
         let radius = theme.radius;
         let interactive = !disabled;
+        // The white hover tint follows `frosted` whatever the setting says, since it is
+        // there for a button floating over artwork; only the blur itself is optional.
+        let frosting = frosted && interactive && blurring(cx);
         let foreground = match disabled {
             true => palette.foreground,
             false => tint.unwrap_or(palette.foreground),
@@ -315,9 +318,9 @@ impl RenderOnce for Button {
         };
         let hovered = match hoverless {
             true => None,
-            false => state_style(hover, hovered, frosted && interactive),
+            false => state_style(hover, hovered, frosting),
         };
-        let pressed = state_style(active, pressed, frosted && interactive);
+        let pressed = state_style(active, pressed, frosting);
         let overrides = std::mem::take(base.style());
 
         let mut button = base

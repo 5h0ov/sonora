@@ -3,7 +3,7 @@ use std::rc::Rc;
 use gpui::prelude::*;
 use gpui::{App, MouseButton, Pixels, Point, StyleRefinement, Window, anchored, point, px};
 
-use crate::menu::Menu;
+use crate::menu::{self, Menu};
 
 const MARGIN: Pixels = px(8.);
 /// How far the panel sits from the pointer. Opening it right under the cursor puts an item
@@ -50,11 +50,13 @@ impl RenderOnce for Popup {
                 let close = Rc::new(close);
                 let outside = close.clone();
                 let toggled = close.clone();
+                let searches = menu.searches();
 
                 menu.on_dismiss(move |_, window, cx| outside(&(), window, cx))
                     .on_action(move |_, window, cx| close(&(), window, cx))
                     .on_mouse_down(MouseButton::Right, move |_, window, cx| {
                         cx.stop_propagation();
+                        menu::release(&searches, window, cx);
                         toggled(&(), window, cx);
                     })
             }

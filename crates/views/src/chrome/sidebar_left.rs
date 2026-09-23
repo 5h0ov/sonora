@@ -157,7 +157,7 @@ impl SidebarLeft {
             playback,
             pins,
             library,
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
             scrollbar,
             popovers: ui::Popovers::default(),

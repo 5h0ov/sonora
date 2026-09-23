@@ -73,7 +73,7 @@ struct Held {
     /// provider said so on the first page. Absent, the rows so far are the count.
     expected: HashMap<LibraryPart, usize>,
     /// The parts whose rows come from the last run's snapshot rather than from this run's
-    /// provider. The first real rows of such a part replace them instead of joining them.
+    /// provider. The part's real rows replace them once they have all arrived.
     stale: HashSet<LibraryPart>,
     starred: Starred,
     tasks: Vec<Task<()>>,
@@ -798,7 +798,8 @@ impl Library {
 
     /// Puts the last run's rows on a shelf while this run's are still on their way, so a launch
     /// shows a library before the provider has answered. Every part stays awaited, so the page
-    /// still reads as loading and the first rows the provider sends replace what was primed.
+    /// still reads as loading, and each part's primed rows stay until the provider has sent all
+    /// of that part.
     /// A shelf that has already heard from its provider is left alone.
     fn prime(&mut self, shelf: Shelf, cx: &mut Context<Self>) {
         let session = self.session.read(cx);
@@ -1908,7 +1909,7 @@ impl Library {
 
     /// Loads a shelf from its provider. A `Saved` shape reads the `saved_*` lists; a `Catalog`
     /// shape reads the `all_*` lists and the `saved_*` ones beside them for hearts and filters.
-    /// Rows a snapshot primed stay on screen while this runs, each part until its own rows
+    /// Rows a snapshot primed stay on screen while this runs, each part until all of its own rows
     /// arrive; a shelf with nothing primed goes back to loading, as a refresh does. The
     /// favorites stay up either way until the new ones land, so a Favorites only filter shows
     /// what it showed before rather than nothing.
@@ -2028,9 +2029,11 @@ impl Library {
         })
     }
 
-    /// Loads one part a page at a time. The shelf shows each page as it lands and learns how
-    /// many rows to expect from the first, so a long library reads from its first hundred rows
-    /// rather than its last. A page that fails ends the part with that failure.
+    /// Loads one part a page at a time. A part with nothing primed shows each page as it lands
+    /// and learns how many rows to expect from the first, so a long library reads from its first
+    /// hundred rows rather than its last. A part a snapshot primed holds its pages back and swaps
+    /// them in together once the last one lands, so the snapshot never shrinks to one page. A
+    /// page that fails ends the part with that failure, and a primed part keeps its snapshot.
     fn stream<T, R>(
         &self,
         shelf: Shelf,
@@ -2053,20 +2056,26 @@ impl Library {
                     return;
                 }
             };
+            let mut held_back = Vec::new();
             while let Some(page) = pages.recv().await {
                 let landed = match page {
                     Ok(Page { total, items }) => {
                         let placed = this.update(cx, |this, cx| {
                             let held = this.held_mut(shelf);
+                            if held.stale.contains(&part) {
+                                return Some(items);
+                            }
                             if let Some(total) = total {
                                 held.expected.insert(part, total);
                             }
-                            shed(&mut held.state, &mut held.stale, part);
                             extend(&mut held.state, wrap(Ok(items)));
                             cx.notify();
+                            None
                         });
-                        if placed.is_err() {
-                            return;
+                        match placed {
+                            Ok(Some(items)) => held_back.extend(items),
+                            Ok(None) => {}
+                            Err(_) => return,
                         }
                         continue;
                     }
@@ -2080,6 +2089,7 @@ impl Library {
                 let held = this.held_mut(shelf);
                 held.expected.remove(&part);
                 shed(&mut held.state, &mut held.stale, part);
+                extend(&mut held.state, wrap(Ok(held_back)));
                 settle(&mut held.state, &mut held.awaited, part, shelf.fatal());
                 this.keep(shelf, Kind::Listed, part, cx);
                 cx.notify();

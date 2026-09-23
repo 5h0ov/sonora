@@ -319,7 +319,11 @@ struct Appearance {
     visualizer_style: String,
     icons: String,
     rounding: String,
+    /// Whether the app paints its frosted treatments. The key kept its old name, which stood
+    /// for a blurred desktop behind the window, so a stored preference carries over.
     blur: bool,
+    /// Whether a see-through window asks the platform to blur the desktop behind it.
+    blur_window: bool,
     font_size: f32,
     transparent: bool,
     transparency: f32,
@@ -511,6 +515,7 @@ impl Default for Appearance {
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
             blur: true,
+            blur_window: true,
             font_size: DEFAULT_FONT_SIZE,
             transparent: false,
             transparency: ui::BACKDROP_TRANSPARENCY,
@@ -830,8 +835,13 @@ impl AppSettings {
         &self.values.appearance.rounding
     }
 
+    /// Whether the app paints its frosted treatments. See `ui::blurring`.
     pub fn blur(&self) -> bool {
         self.values.appearance.blur
+    }
+
+    pub fn blur_window(&self) -> bool {
+        self.values.appearance.blur_window
     }
 
     pub fn stillness(&self) -> Stillness {
@@ -858,6 +868,7 @@ impl AppSettings {
             transparent: self.transparent(),
             transparency: self.transparency(),
             blur: self.blur(),
+            blur_window: self.blur_window(),
             tint: None,
             tint_secondary: None,
         }
@@ -1436,6 +1447,11 @@ impl AppSettings {
 
     pub fn set_blur(&mut self, blur: bool, cx: &mut Context<Self>) {
         self.values.appearance.blur = blur;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_blur_window(&mut self, blur: bool, cx: &mut Context<Self>) {
+        self.values.appearance.blur_window = blur;
         self.schedule_save(cx);
     }
 

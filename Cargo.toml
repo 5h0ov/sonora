@@ -38,8 +38,8 @@ env_logger = "0.11"
 fastrand = "2.5"
 futures = "0.3"
 fluent-bundle = "0.16"
-gpui = { git = "https://github.com/sonorahq/gpui", rev = "d8df76b973cc5c7a0ec122cb0bd8a6fa44a89e00" }
-gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "d8df76b973cc5c7a0ec122cb0bd8a6fa44a89e00", features = [
+gpui = { git = "https://github.com/sonorahq/gpui", rev = "2f121e7e3a38d115313074ae885139ba4b99b443" }
+gpui_platform = { git = "https://github.com/sonorahq/gpui", rev = "2f121e7e3a38d115313074ae885139ba4b99b443", features = [
   "font-kit",
   "wayland",
   "x11",
@@ -95,6 +95,8 @@ objc2-web-kit = { version = "0.3", default-features = false, features = [
   "objc2-core-foundation",
   "WKHTTPCookieStore",
   "WKNavigation",
+  "WKUserContentController",
+  "WKUserScript",
   "WKWebView",
   "WKWebViewConfiguration",
   "WKWebsiteDataStore",
@@ -136,7 +138,7 @@ symphonia = { version = "0.5.5", default-features = false, features = ["mkv", "o
 tray-icon = { version = "0.24", default-features = false }
 unic-langid = { version = "0.9", features = ["macros"] }
 unicode-segmentation = "1.12"
-ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "e0a5174" }
+ytmusic = { git = "https://github.com/sonorahq/ytmusic-rs", rev = "3667184" }
 
 librespot-core = { version = "0.8.0", default-features = false, features = [
   "rustls-tls-native-roots",

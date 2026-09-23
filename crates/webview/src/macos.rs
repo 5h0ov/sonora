@@ -14,7 +14,10 @@ use objc2_app_kit::{NSBackingStoreType, NSWindow, NSWindowStyleMask};
 use objc2_foundation::{
     NSArray, NSHTTPCookie, NSPoint, NSRect, NSSize, NSString, NSURL, NSURLRequest,
 };
-use objc2_web_kit::{WKHTTPCookieStore, WKWebView, WKWebViewConfiguration, WKWebsiteDataStore};
+use objc2_web_kit::{
+    WKHTTPCookieStore, WKUserScript, WKUserScriptInjectionTime, WKWebView, WKWebViewConfiguration,
+    WKWebsiteDataStore,
+};
 
 use crate::native::{Fetch, HEIGHT, MIN_HEIGHT, MIN_WIDTH, Reading, WIDTH};
 use crate::{Cookie, Target};
@@ -32,6 +35,11 @@ pub(crate) struct Window {
     view: Retained<WKWebView>,
     cookies: Retained<WKHTTPCookieStore>,
     fetch: Rc<RefCell<Fetch>>,
+    /// Whether the window was put on the screen. A scripted window never is, and an invisible
+    /// window would otherwise read as one the user had closed.
+    shown: bool,
+    /// Whether `close` has been called. This is what `closed` answers for a hidden window.
+    dismissed: Rc<RefCell<bool>>,
 }
 
 impl Window {
@@ -53,6 +61,22 @@ impl Window {
             WKWebView::initWithFrame_configuration(WKWebView::alloc(mtm), frame, &configuration)
         };
         unsafe { view.setCustomUserAgent(Some(&NSString::from_str(USER_AGENT))) };
+        if let Some(source) = &target.script {
+            // The view copied the configuration, so the script goes into the copy it kept.
+            let script = unsafe {
+                WKUserScript::initWithSource_injectionTime_forMainFrameOnly(
+                    WKUserScript::alloc(mtm),
+                    &NSString::from_str(source),
+                    WKUserScriptInjectionTime::AtDocumentStart,
+                    true,
+                )
+            };
+            unsafe {
+                view.configuration()
+                    .userContentController()
+                    .addUserScript(&script)
+            };
+        }
         let cookies = unsafe { view.configuration().websiteDataStore().httpCookieStore() };
 
         let style = NSWindowStyleMask::Titled
@@ -74,7 +98,12 @@ impl Window {
         window.setMinSize(NSSize::new(f64::from(MIN_WIDTH), f64::from(MIN_HEIGHT)));
         window.setContentView(Some(&view));
         window.center();
-        window.makeKeyAndOrderFront(None);
+        // A scripted window is never looked at. WebKit drives a view in a window that was never
+        // ordered front all the same, so it stays off the screen.
+        let shown = !target.scripted();
+        if shown {
+            window.makeKeyAndOrderFront(None);
+        }
         unsafe { view.loadRequest(&NSURLRequest::requestWithURL(&url)) };
 
         Ok(Self {
@@ -82,12 +111,18 @@ impl Window {
             view,
             cookies,
             fetch: Rc::new(RefCell::new(Fetch::Idle)),
+            shown,
+            dismissed: Rc::new(RefCell::new(false)),
         })
     }
 
-    /// True once the user closed the window. A miniaturized window is not visible but still open.
+    /// True once the window is gone. A window the user can see is gone when it is neither visible
+    /// nor miniaturized; one that was never shown is gone only when the app closes it.
     pub(crate) fn closed(&self) -> bool {
-        !self.window.isVisible() && !self.window.isMiniaturized()
+        match self.shown {
+            true => !self.window.isVisible() && !self.window.isMiniaturized(),
+            false => *self.dismissed.borrow(),
+        }
     }
 
     pub(crate) fn host(&self) -> Option<String> {
@@ -132,6 +167,7 @@ impl Window {
         if !self.closed() {
             self.window.close();
         }
+        *self.dismissed.borrow_mut() = true;
     }
 }
 

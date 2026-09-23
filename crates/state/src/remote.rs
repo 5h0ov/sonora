@@ -12,7 +12,7 @@ use souvlaki::{
 };
 use tokio::sync::mpsc;
 
-use crate::{Io, Playback, PlaybackState, Sonora, join};
+use crate::{Cover, Io, Playback, PlaybackState, Sonora, join};
 
 const BUS_NAME: &str = "sonora";
 const DISPLAY_NAME: &str = "Sonora";
@@ -41,17 +41,21 @@ pub fn attach(hwnd: Option<*mut c_void>, cx: &mut App) {
         }
     };
 
-    let playback = Sonora::global(cx).playback.clone();
+    let sonora = Sonora::global(cx);
+    let playback = sonora.playback.clone();
+    let cover = sonora.cover.clone();
     let io = Io::global(cx);
-    let remote = cx.new(|cx| Remote::new(controls, playback, io, cx));
+    let remote = cx.new(|cx| Remote::new(controls, playback, cover, io, cx));
     cx.set_global(Attached { _remote: remote });
 }
 
 pub struct Remote {
     controls: MediaControls,
     playback: Entity<Playback>,
+    cover: Entity<Cover>,
     io: Io,
     shown: Option<String>,
+    source: Option<String>,
     reported: Option<PlaybackState>,
     at: Duration,
     artwork: Option<Task<()>>,
@@ -62,6 +66,7 @@ impl Remote {
     fn new(
         mut controls: MediaControls,
         playback: Entity<Playback>,
+        cover: Entity<Cover>,
         io: Io,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -82,12 +87,16 @@ impl Remote {
 
         cx.observe(&playback, |this, _, cx| this.publish(cx))
             .detach();
+        // the album art resolves after the track it belongs to, so republish when it lands
+        cx.observe(&cover, |this, _, cx| this.publish(cx)).detach();
 
         Self {
             controls,
             playback,
+            cover,
             io,
             shown: None,
+            source: None,
             reported: None,
             at: Duration::ZERO,
             artwork: None,
@@ -121,13 +130,20 @@ impl Remote {
         let track = playback.track().cloned();
 
         let id = track.as_ref().and_then(|track| track.id.clone());
-        if id != self.shown {
+        let cover = track.as_ref().and_then(|track| self.artwork_url(track, cx));
+        let moved = id != self.shown;
+        if moved || cover != self.source {
             self.shown = id;
+            self.source = cover.clone();
             self.artwork = None;
-            let cover = track.as_ref().and_then(|track| track.cover.clone());
             let remote = cover.as_deref().is_some_and(is_remote);
-            // a remote cover follows once it sits in the cache; anything else is a file already
-            self.describe(track.as_ref(), cover.as_deref().filter(|_| !remote));
+            match (moved, remote) {
+                // a remote cover follows once it sits in the cache, and a sharper one for the
+                // track already on show leaves the published thumbnail up until the file lands
+                (false, true) => {}
+                // anything else is a file already
+                _ => self.describe(track.as_ref(), cover.as_deref().filter(|_| !remote)),
+            }
             if let (Some(track), Some(url), true) = (track, cover, remote) {
                 self.artwork = Some(self.fetch_artwork(track, url, cx));
             }
@@ -152,6 +168,18 @@ impl Remote {
 }
 
 impl Remote {
+    /// The cover to publish: the album art `Cover` resolves once it arrives, the thumbnail the
+    /// track carries until then. Spotify ships a 64px thumbnail with a track, which is plenty
+    /// for a list row and blurry in a desktop widget that draws it several times that size.
+    fn artwork_url(&self, track: &Track, cx: &App) -> Option<String> {
+        track
+            .album_id
+            .as_deref()
+            .and_then(|album| self.cover.read(cx).large_for(album))
+            .map(str::to_owned)
+            .or_else(|| track.cover.clone())
+    }
+
     fn describe(&mut self, track: Option<&Track>, cover: Option<&str>) {
         let metadata = match track {
             Some(track) => MediaMetadata {

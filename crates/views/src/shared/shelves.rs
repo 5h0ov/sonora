@@ -54,7 +54,7 @@ impl Shelves {
             host,
             playback,
             rails: Vec::new(),
-            menus: ItemMenu::new(playlist_scrollbar),
+            menus: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
         }
     }

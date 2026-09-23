@@ -106,7 +106,9 @@ pub trait TableSource: 'static {
         true
     }
 
-    fn filter_axes(&self, _query: &str, _cx: &App) -> Vec<Filter> {
+    /// The axes the filter menu draws. They describe the whole list rather than the rows in
+    /// view, so a choice that narrows the table to nothing still leaves every axis standing.
+    fn filter_axes(&self, _cx: &App) -> Vec<Filter> {
         vec![]
     }
 
@@ -1262,6 +1264,7 @@ pub trait Listing {
     fn filters(&self, cx: &App) -> Vec<Filter>;
     fn filter(&self, change: FilterChange, cx: &mut App);
     fn filtering(&self, cx: &App) -> bool;
+    fn narrowed(&self, cx: &App) -> bool;
     fn toggles(&self, cx: &App) -> Vec<Toggle>;
     fn set_width(&self, width: Pixels, cx: &mut App);
     fn set_query(&self, query: &str, cx: &mut App);
@@ -1325,8 +1328,7 @@ impl<S: TableSource> Listing for Entity<TableState<S>> {
     }
 
     fn filters(&self, cx: &App) -> Vec<Filter> {
-        let delegate = self.read(cx).delegate();
-        delegate.source().filter_axes(delegate.query(), cx)
+        self.read(cx).delegate().source().filter_axes(cx)
     }
 
     fn filter(&self, change: FilterChange, cx: &mut App) {
@@ -1341,6 +1343,10 @@ impl<S: TableSource> Listing for Entity<TableState<S>> {
     fn filtering(&self, cx: &App) -> bool {
         let delegate = self.read(cx).delegate();
         !delegate.query().is_empty() || delegate.source().filtered(cx)
+    }
+
+    fn narrowed(&self, cx: &App) -> bool {
+        self.read(cx).delegate().source().filtered(cx)
     }
 
     fn set_width(&self, width: Pixels, cx: &mut App) {

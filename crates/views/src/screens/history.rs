@@ -56,6 +56,7 @@ impl HistoryView {
                 HistoryTracks(history.clone()),
                 playback.clone(),
                 menu,
+                cx,
             )
             .with_history(history.clone())
             .table(cx.weak_entity());

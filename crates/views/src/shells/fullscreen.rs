@@ -137,7 +137,7 @@ impl FullscreenView {
             muted: None,
             large: None,
             revision: 0,
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
             last_moved: Instant::now(),
             inside: true,
@@ -805,6 +805,7 @@ impl FullscreenView {
     fn sound(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = *cx.theme();
         let frosted = ambient::shown(cx);
+        let hazy = frosted && ui::blurring(cx);
         let zone = px(VOLUME_ZONE);
         let level = self.playback.read(cx).volume();
         let empty = theme.muted_foreground.opacity(0.3);
@@ -868,8 +869,9 @@ impl FullscreenView {
                         }))
                         .child(
                             // Over the ambient field the panel is glass; over flat paint a
-                            // blur shows nothing, so there it keeps the popover fill.
-                            match frosted {
+                            // blur shows nothing, so there it keeps the popover fill, and so
+                            // does a run with the blur turned off.
+                            match hazy {
                                 true => glass(div(), cx),
                                 false => div().bg(theme.popover),
                             }

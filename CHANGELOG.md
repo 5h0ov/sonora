@@ -7,6 +7,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The Add to playlist menu has a search field at the top. Type to narrow the list, then use the
+  arrow keys and Enter to pick a playlist.
+
 ### Changed
 
 - Keep playing when closed is now Keep running in the background, and the tray icon, the menu bar
@@ -21,10 +26,30 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - A track played on its own now follows its station past the first batch on YouTube Music,
   rather than starting over from the last track, and never replays what the queue has heard.
 - Radio now plays in the order the provider ranks it rather than shuffled.
+- Menus, fields and floating panels frost what they cover, and menus sit lighter over it.
+- Hovering a menu item, a table row or a sidebar entry now shades what is behind it rather than
+  covering it, so a frosted surface keeps its blur under the pointer. Separators and outlines
+  read through the same way.
+- Settings > Appearance > Blur UI turns that frosting off. The old Blur setting is now Blur
+  window, and only shows on macOS and Windows, where it works.
+- Menus cast a soft shadow, and dialogs have rounder corners.
 
 ### Fixed
 
+- An empty Apple Music playlist opens as an empty playlist rather than a "Could not load" error.
+- The library shown at launch from the last session stays whole until the provider has sent
+  all of it, rather than shrinking to the first page and filling back in.
+- Guest mode is remembered again, so choosing it no longer brings the welcome screen
+  back on every launch.
+- YouTube Music tracks that stopped loading with a 403 now play: Sonora sends the
+  proof-of-origin token YouTube asks for, minting it in a hidden browser window, and falls
+  back to a second stream when the first one is refused.
 - Covers no longer swap places with each other while a grid is scrolled quickly.
+- The cover handed to the system media controls is the album artwork rather than the
+  64-pixel thumbnail a track carries, so media widgets and lock screens draw it sharp.
+- Frosted menus and fields no longer turn grey under their own shadow on the light theme.
+- Menus and dialogs show their shadow from the moment they open rather than once they have
+  settled.
 
 ## [0.38.0] - 2026-09-20
 

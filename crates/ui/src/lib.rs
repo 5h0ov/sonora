@@ -61,7 +61,7 @@ pub use filters::{
     Filter, FilterChange, FlagAxis, RangeAxis, RangeScrubber, RangeState, SortAxis, Unit,
 };
 pub use form::{FORM_CONTEXT, Submit};
-pub use glass::{GLASS_BLUR, GLASS_FILL, frost, glass};
+pub use glass::{GLASS_BLUR, GLASS_FILL, blurring, frost, glass};
 pub use glide::{Glide, ScrollPosition};
 pub use grain::grain;
 pub use info_card::{Fact, InfoCard};
@@ -74,12 +74,13 @@ pub use input::{
 };
 pub use label::{eyebrow, faint, heading, upper, vacant};
 pub use layout::{ALWAYS, MIN_CONTENT, ROOMY, Room, SNUG, VAST, WIDE};
-pub use menu::{MENU_CONTEXT, Menu, MenuItem, SubmenuState};
+pub use menu::{MENU_CONTEXT, Menu, MenuItem, MenuSearch, SubmenuState};
 pub use metrics::{LEADING, Metrics, Rounding, Text, snapped, tucked};
 pub use modal::Modal;
 pub use motion::{
-    Motion, Motioned, Pace, Rising, Saver, Springs, Stillness, ease_in_out_cubic, ease_in_out_expo,
-    ease_out_cubic, ease_out_expo, ease_out_quad, entering, entrance_span, mix, veiled,
+    Fading, Motion, Motioned, Pace, Rising, Saver, Springs, Stillness, ease_in_out_cubic,
+    ease_in_out_expo, ease_out_cubic, ease_out_expo, ease_out_quad, entering, entrance_span, mix,
+    veiled,
 };
 pub use notice::Notice;
 pub use palette::{CoverPalette, decode, palette, tint};
@@ -107,7 +108,8 @@ pub use table::{
 pub use tabs::{TabBar, Tabs};
 pub use theme::{
     ActiveTheme, BACKDROP_TRANSPARENCY, CoverFill, Look, MAX_FONT, MAX_LYRICS_SCALE,
-    MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, Theme, ThemeKind, ThemeOverrides, backdrop,
+    MAX_TRANSPARENCY, MIN_FONT, MIN_LYRICS_SCALE, Theme, ThemeKind, ThemeOverrides, WINDOW_BLUR,
+    backdrop,
 };
 pub use time::{clock, tabular};
 pub use toast::Toast;

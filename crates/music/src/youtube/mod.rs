@@ -45,6 +45,17 @@ enum Saved {
     Guest,
 }
 
+/// Asks the app for the proof-of-origin token the client needs. Every answer comes out of
+/// `music::potoken`, so the client never waits on the browser window that fills it.
+struct Minter;
+
+#[async_trait]
+impl ytmusic::Minter for Minter {
+    async fn mint(&self, binding: &str) -> Option<String> {
+        crate::potoken::token(binding)
+    }
+}
+
 pub struct YouTubeProvider {
     credentials: PathBuf,
     /// The cookie store ytmusic writes back to as Google rotates the session. The pasted
@@ -89,12 +100,17 @@ impl YouTubeProvider {
         Arc::new(
             api.persist_cookies(self.cookies.clone())
                 .cache_resolutions(self.resolved.clone())
-                .cache_player(self.player.clone()),
+                .cache_player(self.player.clone())
+                .mint_po_tokens(Arc::new(Minter)),
         )
     }
 
     fn guest_client(&self) -> Arc<YtMusic> {
-        Arc::new(YtMusic::anonymous().cache_player(self.player.clone()))
+        Arc::new(
+            YtMusic::anonymous()
+                .cache_player(self.player.clone())
+                .mint_po_tokens(Arc::new(Minter)),
+        )
     }
 
     fn authenticated_session(&self, api: Arc<YtMusic>, profile: UserProfile) -> ProviderSession {
@@ -192,10 +208,14 @@ impl YouTubeProvider {
         }
     }
 
-    /// Clears whatever was stored when a guest session starts. A guest run holds no account
-    /// and nothing worth keeping, so it leaves nothing behind for the next launch either.
-    fn drop_stored(&self) {
-        credentials::remove(&self.credentials);
+    /// Records that the user chose to listen as a guest, so the next launch restores that
+    /// instead of asking again. The rotating cookie store goes with it, since a guest client
+    /// never reads one.
+    fn store_guest(&self) {
+        credentials::remove(&self.cookies);
+        if let Err(error) = self.save(&Saved::Guest) {
+            log::warn!("youtube: cannot remember the guest session: {error:#}");
+        }
     }
 }
 
@@ -281,7 +301,7 @@ impl MusicProvider for YouTubeProvider {
     ) -> Result<ProviderSession> {
         match method {
             SignIn::Anonymous | SignIn::Default => {
-                self.drop_stored();
+                self.store_guest();
                 Ok(self.guest_session(self.guest_client()))
             }
             SignIn::Secret => {

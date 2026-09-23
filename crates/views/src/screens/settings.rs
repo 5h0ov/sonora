@@ -136,6 +136,7 @@ enum Slot {
     Visualizer,
     Icons,
     Opacity,
+    WindowBlur,
     Blur,
     Corners,
     FullscreenControlsAutohide,
@@ -369,6 +370,9 @@ impl SettingsView {
             Input::new("settings-search", cx)
                 .icon("icons/search.svg")
                 .clearable()
+                // the field floats over the rows the page scrolls beneath it, so it frosts
+                // them the way the category bar under it does
+                .blurred()
         });
         cx.observe(&search, |this, input, cx| {
             let query = input.read(cx).text().trim().to_owned();
@@ -546,12 +550,15 @@ impl SettingsView {
                 Slot::Adaptive,
                 Slot::Icons,
                 Slot::Opacity,
+            ]
+            .into_iter()
+            .chain(ui::WINDOW_BLUR.then_some(Slot::WindowBlur))
+            .chain([
                 Slot::Blur,
                 Slot::Corners,
                 Slot::Title("settings-group-fullscreen"),
                 Slot::Ambient,
-            ]
-            .into_iter()
+            ])
             .chain(
                 self.settings
                     .read(cx)
@@ -662,6 +669,10 @@ impl SettingsView {
             Slot::Visualizer => (t!("settings-visualizer"), t!("settings-visualizer-detail")),
             Slot::Icons => (t!("settings-icons"), t!("settings-icons-detail")),
             Slot::Opacity => (t!("settings-opacity"), t!("settings-opacity-detail")),
+            Slot::WindowBlur => (
+                t!("settings-blur-window"),
+                t!("settings-blur-window-detail"),
+            ),
             Slot::Blur => (t!("settings-blur"), t!("settings-blur-detail")),
             Slot::Corners => (t!("settings-corners"), t!("settings-corners-detail")),
             Slot::FullscreenControlsAutohide => (
@@ -880,6 +891,7 @@ impl SettingsView {
             Slot::Visualizer => self.visualizer_style_row(cx).element,
             Slot::Icons => self.icons_row(cx).element,
             Slot::Opacity => self.opacity_row(cx).element,
+            Slot::WindowBlur => self.blur_window_row(cx).element,
             Slot::Blur => self.blur_row(cx).element,
             Slot::Corners => self.corners_row(cx).element,
             Slot::FullscreenControlsAutohide => self.fullscreen_controls_autohide_row(cx).element,
@@ -1295,7 +1307,36 @@ impl SettingsView {
         )
     }
 
+    /// Turns every frosted treatment in the app on or off at once: the menus, the fields, the
+    /// floating panels and the bands the chrome lays over the page. A backdrop blur is the
+    /// priciest thing the renderer does per frame, which is the whole reason it is a choice.
     fn blur_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let look = self.look(cx);
+        let overrides = self.settings.read(cx).theme_overrides().clone();
+
+        self.row(
+            t!("settings-blur"),
+            t!("settings-blur-detail"),
+            muted,
+            small,
+            Switch::new("blur", look.blur)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    let blur = !look.blur;
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_blur(blur, cx));
+                    Theme::set(Look { blur, ..look }, &overrides, cx);
+                    cx.notify();
+                }))
+                .into_any_element(),
+        )
+    }
+
+    /// Asks the platform to blur the desktop behind a see-through window. It needs something to
+    /// show through, so the switch is off and disabled while the window is opaque.
+    fn blur_window_row(&self, cx: &mut Context<Self>) -> Setting {
         let theme = *cx.theme();
         let muted = theme.muted_foreground;
         let small = theme.text(Text::Small);
@@ -1304,17 +1345,24 @@ impl SettingsView {
         let opaque = !look.transparent;
 
         self.row(
-            t!("settings-blur"),
-            t!("settings-blur-detail"),
+            t!("settings-blur-window"),
+            t!("settings-blur-window-detail"),
             muted,
             small,
-            Switch::new("blur", look.blur && !opaque)
+            Switch::new("blur-window", look.blur_window && !opaque)
                 .disabled(opaque)
                 .on_click(cx.listener(move |this, _, _, cx| {
-                    let blur = !look.blur;
+                    let blur_window = !look.blur_window;
                     this.settings
-                        .update(cx, |settings, cx| settings.set_blur(blur, cx));
-                    Theme::set(Look { blur, ..look }, &overrides, cx);
+                        .update(cx, |settings, cx| settings.set_blur_window(blur_window, cx));
+                    Theme::set(
+                        Look {
+                            blur_window,
+                            ..look
+                        },
+                        &overrides,
+                        cx,
+                    );
                     cx.notify();
                 }))
                 .into_any_element(),
@@ -4229,29 +4277,29 @@ impl Render for SettingsHeader {
 
         // a search lights no category, since its rows come from all of them, and picking
         // one ends the search
-        let categories =
-            TabBar::new("settings-categories")
-                .max_w_full()
-                .items(SettingsTab::ALL.map(|tab| {
-                    Button::new(tab.id())
-                        .label(i18n::lookup(tab.key(), None))
-                        .icon(tab.icon())
-                        .small()
-                        .ghost()
-                        .selected(!searching && tab == chosen)
-                        .when(calm == Some(tab), Button::hoverless)
-                        .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                            if !hovered && this.calm == Some(tab) {
-                                this.calm = None;
-                                cx.notify();
-                            }
-                        }))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.calm = Some(tab);
-                            this.view.update(cx, |view, cx| view.select(tab, cx));
-                            navigate(Destination::Settings(tab), cx);
-                        }))
-                }));
+        let categories = TabBar::new("settings-categories")
+            .max_w_full()
+            .blurred()
+            .items(SettingsTab::ALL.map(|tab| {
+                Button::new(tab.id())
+                    .label(i18n::lookup(tab.key(), None))
+                    .icon(tab.icon())
+                    .small()
+                    .ghost()
+                    .selected(!searching && tab == chosen)
+                    .when(calm == Some(tab), Button::hoverless)
+                    .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                        if !hovered && this.calm == Some(tab) {
+                            this.calm = None;
+                            cx.notify();
+                        }
+                    }))
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.calm = Some(tab);
+                        this.view.update(cx, |view, cx| view.select(tab, cx));
+                        navigate(Destination::Settings(tab), cx);
+                    }))
+            }));
 
         div()
             .relative()
@@ -4266,7 +4314,10 @@ impl Render for SettingsHeader {
                 };
                 view.update(cx, |view, cx| view.set_header_height(height, cx));
             })
-            .when(!theme.transparent, |this| {
+            // The haze follows the window: a see-through page has content of its own passing
+            // under the header and reads worse without it. Only the flat fallback is dropped
+            // there, since a solid band over a see-through page is a slab.
+            .when(effects() || !theme.transparent, |this| {
                 this.child(veil(
                     Edge::Top,
                     height,

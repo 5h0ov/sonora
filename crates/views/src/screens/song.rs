@@ -84,7 +84,7 @@ impl SongView {
             scrollbar: cx.new(|_| Scrollbar::new(gpui::ScrollHandle::new()).watching(me)),
             about_bar: cx.new(|_| Scrollbar::new(gpui::ScrollHandle::new()).watching(me)),
             about_open: false,
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
             me: cx.weak_entity(),
         }

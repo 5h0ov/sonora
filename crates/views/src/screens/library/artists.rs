@@ -113,7 +113,7 @@ impl TableSource for ArtistSource {
         })
     }
 
-    fn filter_axes(&self, _query: &str, cx: &App) -> Vec<Filter> {
+    fn filter_axes(&self, cx: &App) -> Vec<Filter> {
         match self.catalog(cx) {
             true => vec![Filter::Flag(FlagAxis {
                 key: "filter-favorites",

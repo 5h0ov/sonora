@@ -1,9 +1,14 @@
-//! A native browser window with a throwaway session, for providers that sign in with cookies.
+//! A native browser window with a throwaway session, for the two jobs that need a real engine.
 //!
-//! The window loads a sign-in page in a data store that lives only as long as the window. Once the
-//! proof cookies appear, their header is handed back and the window closes. No browser profile ever
-//! holds that session, so nothing rotates the cookies behind the app's back the way a shared browser
-//! session does.
+//! The window loads a page in a data store that lives only as long as the window. Once the proof
+//! cookies appear, their header is handed back and the window closes. No browser profile ever
+//! holds that session, so nothing rotates the cookies behind the app's back the way a shared
+//! browser session does.
+//!
+//! The first job is signing in: the user works through the provider's pages and the proof cookies
+//! are the session. The second is running a script on a page the app cannot reach any other way,
+//! which is how YouTube's proof-of-origin token is minted; that window is hidden and its script
+//! leaves the answer in a cookie the same poll reads.
 //!
 //! An account provider can finish the sign-in on an interstitial of its own — Google's security
 //! check-up, say — that jumps straight to the return url and skips the hop that hands the account
@@ -12,7 +17,8 @@
 //! is exactly what the page's own Sign in button would do.
 //!
 //! macOS, Windows and Linux have native backends. Every other platform reports
-//! `supported() == false` and `Login::open` fails, so a caller falls back to pasting a header.
+//! `supported() == false` and `Page::open` fails, so a caller falls back to pasting a header or
+//! goes without a token.
 
 use anyhow::Result;
 
@@ -39,10 +45,15 @@ mod unsupported;
 #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
 use unsupported as platform;
 
-/// What a sign-in window is asked to do. `url` opens first. `landing` scopes cookie reads on
-/// platforms whose cookie store asks for a URL. The user is through as soon as the cookies for
-/// `domain` carry at least one of the `proof` names; a page on `domain` without them means the
-/// hand-off was skipped, and `url` is loaded once more.
+/// What a window is asked to do. `url` opens first. `landing` scopes cookie reads on platforms
+/// whose cookie store asks for a URL. The window is done as soon as the cookies for `domain`
+/// carry at least one of the `proof` names.
+///
+/// Two kinds of window fit this. A sign-in window is shown and carries no script: the user works
+/// through the provider's pages and the proof cookies are the session. A scripted window is
+/// hidden and runs `script` on every page it loads, which does its work and leaves the answer in
+/// a cookie named in `proof`; nothing about it is a sign-in, and the retry that recovers a
+/// skipped hand-off is left out.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Target {
     pub url: String,
@@ -53,6 +64,16 @@ pub struct Target {
     /// A user agent the window presents instead of the backend's default, when the provider
     /// needs one that matches the engine the backend drives.
     pub agent: Option<String>,
+    /// Javascript to run in every page the window loads, before the page's own scripts. A window
+    /// with one is a scripted window and is never shown.
+    pub script: Option<String>,
+}
+
+impl Target {
+    /// Whether this target is a background page rather than a window the user works in.
+    pub(crate) fn scripted(&self) -> bool {
+        self.script.is_some()
+    }
 }
 
 /// One cookie as the page holds it. `domain` keeps the leading dot when the browser stored one.
@@ -74,8 +95,9 @@ pub enum Poll {
     Cookies(String),
 }
 
-/// A sign-in window. Open it on the main thread and poll it from there; dropping it closes it.
-pub struct Login {
+/// A browser window driving one [`Target`]. Open it on the main thread and poll it from there;
+/// dropping it closes it.
+pub struct Page {
     target: Target,
     window: platform::Window,
     /// Whether the sign-in url has already been loaded a second time. Once is the limit: a page
@@ -83,13 +105,13 @@ pub struct Login {
     retried: bool,
 }
 
-/// Whether this platform can open a sign-in window at all. On Linux the answer is only known once
+/// Whether this platform can open a browser window at all. On Linux the answer is only known once
 /// webkit2gtk has been looked for, so ask it where a pause would not be felt.
 pub fn supported() -> bool {
     platform::supported()
 }
 
-impl Login {
+impl Page {
     /// Opens the window and starts loading the target url. Must run on the main thread.
     pub fn open(target: Target) -> Result<Self> {
         let window = platform::Window::open(&target)?;
@@ -124,9 +146,10 @@ impl Login {
 
     /// Loads the sign-in url again when the page is on the provider's domain without a session,
     /// once. Any page of the domain counts, not only the landing: a skipped hand-off can end on
-    /// an error page of the provider's just as well.
+    /// an error page of the provider's just as well. A scripted window has no hand-off to
+    /// recover, and reloading would only throw away the work its script is in the middle of.
     fn retry(&mut self) {
-        if self.retried {
+        if self.retried || self.target.scripted() {
             return;
         }
         let Some(host) = self.window.host() else {

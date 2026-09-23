@@ -362,7 +362,7 @@ impl Aside {
             verse_take: 0,
             placing: false,
             context_menu: None,
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             drop_gap: None,
             scroll,
             scrollbar,

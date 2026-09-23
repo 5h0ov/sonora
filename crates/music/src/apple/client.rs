@@ -153,6 +153,19 @@ impl fmt::Display for Busy {
 
 impl std::error::Error for Busy {}
 
+/// A 404 from Apple. It also means an empty relationship, such as the tracks of a playlist
+/// with nothing in it, so a caller that knows the parent exists reads it as no rows.
+#[derive(Debug)]
+struct Missing;
+
+impl fmt::Display for Missing {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("apple music has nothing there")
+    }
+}
+
+impl std::error::Error for Missing {}
+
 impl AppleClient {
     /// Reads the web player's bearer token and the account's storefront, which is also what
     /// proves the user token is still good.
@@ -302,9 +315,10 @@ impl AppleClient {
                 .and_then(Value::as_str)
                 .unwrap_or("no reason given");
             let refused = anyhow!("apple music answered {status} for {method} {path}: {detail}");
-            return match busy(status) {
-                true => Err(refused.context(Busy(after))),
-                false => Err(refused),
+            return match (busy(status), status == reqwest::StatusCode::NOT_FOUND) {
+                (true, _) => Err(refused.context(Busy(after))),
+                (false, true) => Err(refused.context(Missing)),
+                (false, false) => Err(refused),
             };
         }
         Ok(answered)
@@ -598,7 +612,7 @@ impl AppleClient {
                 .and_then(Value::as_str)
                 .map(str::to_owned)),
             // Not in the library at all, which Apple reports as a missing relationship.
-            Err(error) if format!("{error}").contains("404") => Ok(None),
+            Err(error) if error.is::<Missing>() => Ok(None),
             Err(error) => Err(error),
         }
     }
@@ -630,7 +644,11 @@ impl AppleClient {
                     ("include[library-songs]", "catalog"),
                 ],
             )
-            .await?;
+            .await;
+        let answered = match answered {
+            Err(error) if error.is::<Missing>() => return Ok((Vec::new(), None, Some(0))),
+            answered => answered?,
+        };
         let tracks = answered
             .get("data")
             .and_then(Value::as_array)
@@ -1143,16 +1161,21 @@ impl MusicApi for AppleClient {
             true => format!("/me/library/playlists/{playlist_id}/tracks"),
             false => self.catalog(&format!("/playlists/{playlist_id}/tracks")),
         };
-        self.walk(
-            &path,
-            PAGE,
-            &[
-                ("include[songs]", "artists,albums"),
-                ("include[library-songs]", "catalog"),
-            ],
-            wire::playlist_track,
-        )
-        .await
+        let walked = self
+            .walk(
+                &path,
+                PAGE,
+                &[
+                    ("include[songs]", "artists,albums"),
+                    ("include[library-songs]", "catalog"),
+                ],
+                wire::playlist_track,
+            )
+            .await;
+        match walked {
+            Err(error) if error.is::<Missing>() => Ok(Vec::new()),
+            walked => walked,
+        }
     }
 
     /// One more page of a playlist. The continuation is the link Apple handed back.

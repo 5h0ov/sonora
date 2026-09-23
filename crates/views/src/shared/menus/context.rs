@@ -1,9 +1,10 @@
-use gpui::{App, ClickEvent, ClipboardItem, Context, Entity, SharedString, Styled as _, Window};
+use gpui::prelude::*;
+use gpui::{App, ClickEvent, ClipboardItem, Context, Entity, SharedString, Window};
 use i18n::t;
 use music::{Album, GenreItem, MediaKind, Playlist, SavedArtist, Track};
 use router::{Destination, navigate};
 use state::{Detail, History, Library, Origin, Playback, Shelf, Sonora};
-use ui::{Menu, MenuItem, Pin, PinKind, Scrollbar, SubmenuState};
+use ui::{Menu, MenuItem, MenuSearch, Pin, PinKind, Scrollbar, SubmenuState};
 
 use crate::shared::confirm::Confirm;
 use crate::shared::pins::Pinned as _;
@@ -60,19 +61,22 @@ pub(crate) struct ItemMenu {
     playlist_submenu: SubmenuState,
     artist_submenu: SubmenuState,
     playlist_scrollbar: Entity<Scrollbar>,
+    playlist_search: MenuSearch,
 }
 
 impl ItemMenu {
-    pub fn new(playlist_scrollbar: Entity<Scrollbar>) -> Self {
+    pub fn new(playlist_scrollbar: Entity<Scrollbar>, cx: &mut App) -> Self {
         Self {
             playlist_submenu: SubmenuState::default(),
             artist_submenu: SubmenuState::default(),
             playlist_scrollbar,
+            playlist_search: MenuSearch::new("menu-search-playlists", cx),
         }
     }
 
     pub fn reset(&self, cx: &App) {
         self.playlist_submenu.reset();
+        self.playlist_search.reset();
         self.artist_submenu.reset();
         self.playlist_scrollbar
             .read(cx)
@@ -219,13 +223,28 @@ impl ItemMenu {
                 .item(MenuItem::separator("playlist-separator"))
                 .item(MenuItem::new("no-playlists", t!("menu-no-playlists")).disabled())
         } else {
+            let query = self.playlist_search.query(cx);
+            let searching = !query.is_empty();
+            let found: Vec<Playlist> = playlists
+                .into_iter()
+                .filter(|playlist| playlist.name.to_lowercase().contains(&query))
+                .collect();
+            let unmatched = found.is_empty();
             Menu::new("playlist-submenu")
                 .w(gpui::px(220.))
                 .max_h(gpui::px(360.))
                 .scrollbar(self.playlist_scrollbar.clone())
-                .item(new_playlist)
-                .item(MenuItem::separator("playlist-separator"))
-                .items(playlists.into_iter().map(|playlist| {
+                .search(self.playlist_search.clone())
+                .when(!searching, |menu| {
+                    menu.item(new_playlist)
+                        .item(MenuItem::separator("playlist-separator"))
+                })
+                .when(unmatched, |menu| {
+                    menu.item(
+                        MenuItem::new("no-matching-playlists", t!("search-no-matches")).disabled(),
+                    )
+                })
+                .items(found.into_iter().map(|playlist| {
                     let held = !ids.is_empty()
                         && ids
                             .iter()

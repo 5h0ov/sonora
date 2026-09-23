@@ -98,7 +98,7 @@ pub(super) struct AlbumSource {
 }
 
 struct Spread {
-    stamp: (usize, String),
+    stamp: usize,
     years: Vec<f32>,
 }
 
@@ -133,8 +133,11 @@ impl AlbumSource {
         self.albums(cx).get(row).cloned()
     }
 
-    pub(super) fn years(&self, query: &str, cx: &App) -> Vec<f32> {
-        let stamp = (self.albums(cx).len(), query.to_owned());
+    /// Every year the shelf holds, in order and without repeats. The stops deliberately ignore
+    /// the search and the other filters, so narrowing the grid to nothing still leaves the
+    /// slider standing at its full span.
+    pub(super) fn years(&self, cx: &App) -> Vec<f32> {
+        let stamp = self.albums(cx).len();
         if let Some(spread) = self.spread.borrow().as_ref()
             && spread.stamp == stamp
         {
@@ -144,7 +147,7 @@ impl AlbumSource {
         let mut years: Vec<f32> = self
             .albums(cx)
             .iter()
-            .filter(|album| album.year > 0 && hits(album, query))
+            .filter(|album| album.year > 0)
             .map(|album| album.year as f32)
             .collect();
         years.sort_by(f32::total_cmp);
@@ -193,9 +196,9 @@ impl TableSource for AlbumSource {
         })
     }
 
-    fn filter_axes(&self, query: &str, cx: &App) -> Vec<Filter> {
+    fn filter_axes(&self, cx: &App) -> Vec<Filter> {
         let mut axes = Vec::new();
-        let years = self.years(query, cx);
+        let years = self.years(cx);
         if let (Some(first), Some(last)) = (years.first(), years.last()) {
             let bounds = (*first, *last);
             let value = self.year_span.unwrap_or(bounds);

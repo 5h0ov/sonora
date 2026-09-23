@@ -11,7 +11,7 @@ use crate::ExplicitBadge;
 use crate::artwork::cover_palette;
 use crate::artwork::{Artwork, Avatar, ROUNDED};
 use crate::button::Button;
-use crate::glass::GLASS_BLUR;
+use crate::glass::{GLASS_BLUR, blurring};
 use crate::label::upper;
 use crate::metrics::{LEADING, Text, snapped};
 use crate::skeleton::Skeleton;
@@ -376,7 +376,7 @@ impl RenderOnce for Card {
                                     .rounded_full()
                                     .fill(play_fill.background.opacity(PLAY_FILL), play_fill.hover)
                                     .tint(play_fill.foreground)
-                                    .backdrop_blur(GLASS_BLUR)
+                                    .when(blurring(cx), |button| button.backdrop_blur(GLASS_BLUR))
                                     .shadow_sm()
                                     .on_mouse_down(MouseButton::Left, |_, _, cx| {
                                         cx.stop_propagation()

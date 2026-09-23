@@ -40,10 +40,11 @@ fn main() -> Result<()> {
         proof: sign_in.proof.iter().map(|it| (*it).to_owned()).collect(),
         title: "Sign in to Apple Music".to_owned(),
         agent: sign_in.agent.map(str::to_owned),
+        script: None,
     };
 
     println!("opening the Apple Music sign-in window; close it to cancel");
-    let mut login = webview::Login::open(target).context("cannot open the sign-in window")?;
+    let mut login = webview::Page::open(target).context("cannot open the sign-in window")?;
     let opened = Instant::now();
     let cookies = loop {
         match login.poll() {

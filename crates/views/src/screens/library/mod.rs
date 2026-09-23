@@ -248,6 +248,7 @@ impl LibraryView {
                 },
                 playback.clone(),
                 playlist_scrollbar,
+                cx,
             )
             .from(move |_| Some(from.clone()))
             .with_liked(library.clone())
@@ -1260,8 +1261,11 @@ impl Tooled for LibraryView {
         let mut tools = Vec::new();
         tools.extend(create);
         tools.extend(columns);
-        let filters = self.table(self.section).filters(cx);
-        if !filters.is_empty() {
+        // A section keeps its funnel while anything is narrowed, even once the axes have gone
+        // with the rows, or an empty result would lock the filter that emptied it in place.
+        let table = self.table(self.section);
+        let filters = table.filters(cx);
+        if !filters.is_empty() || table.narrowed(cx) {
             tools.push(tools::filters(
                 &self.popovers,
                 &self.sliders[self.section.slot()],

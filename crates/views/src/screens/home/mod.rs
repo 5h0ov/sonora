@@ -58,7 +58,7 @@ impl HomeView {
     ) -> Self {
         let me = cx.entity_id();
         let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(me));
-        let menus = ItemMenu::new(playlist_scrollbar);
+        let menus = ItemMenu::new(playlist_scrollbar, cx);
 
         cx.observe(&home, |this, _, cx| {
             this.menus.reset(cx);

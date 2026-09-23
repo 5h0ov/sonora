@@ -1,6 +1,9 @@
 //! The ambient background: a flowing colour field behind fullscreen, five soft
-//! blobs under a heavy blur with a dark overlay so lyrics stay readable. `Root`
-//! owns the one entity and paints it under everything, title bar included.
+//! blobs under a heavy blur, darkened so lyrics stay readable. `Root` owns the
+//! one entity, paints it under everything, title bar included, and paints no
+//! background of its own beneath it: the field stands in for the page and
+//! carries the window's own opacity, so a see-through window stays see-through
+//! in fullscreen.
 //!
 //! `ambient` decides whether it is painted at all, and with it whether the
 //! fullscreen controls frost what they float over. `ambient_motion` decides
@@ -37,7 +40,10 @@ const BLUR_FULL: f32 = 4.;
 /// the pixels. Nothing in the field is sharper than the blur, so the upscale
 /// shows nothing.
 const DOWNSCALE: f32 = 4.;
-/// Dark overlay keeping lyrics readable over the field.
+/// How much of itself the field keeps under the dark overlay that holds lyrics readable over
+/// it. The overlay is folded into the colours rather than painted as a sheet of its own: over
+/// an opaque stack multiplying every layer by what it lets through is the same picture, and a
+/// black sheet this strong was most of what a see-through window's alpha went on.
 const SHADE: f32 = 0.55;
 
 /// One blob: base centre (fractions of the layer), diameter (fraction of the
@@ -198,6 +204,14 @@ impl Render for Ambient {
             false => 0.,
         };
         let colors = self.wash(Self::colors(&theme), animates);
+        // The field stands in for the page rather than sitting on it, so it carries the
+        // window's own opacity and `Root` paints no background beneath it. One opacity thins
+        // every layer at once; a quad still adds to what it covers, which is why the blobs
+        // read a shade denser than the gaps between them.
+        let clarity = match theme.transparent {
+            true => theme.background.a,
+            false => 1.,
+        };
         // Geometry resolves against the layer's own pixel bounds, measured a
         // frame ago by the canvas, so the discs stay circular at any window
         // aspect ratio. The field is laid out at a fraction of those bounds
@@ -211,6 +225,7 @@ impl Render for Ambient {
             .absolute()
             .inset_0()
             .overflow_hidden()
+            .opacity(clarity)
             .child(
                 canvas(
                     {
@@ -222,7 +237,10 @@ impl Render for Ambient {
                 .absolute()
                 .size_full(),
             )
-            .child(div().absolute().inset_0().bg(theme.background))
+            .child(div().absolute().inset_0().bg(shaded(Hsla {
+                a: 1.,
+                ..theme.background
+            })))
             .child(
                 div()
                     .absolute()
@@ -259,11 +277,10 @@ impl Render for Ambient {
                                     .top(px((grown - stepped) / 2.))
                                     .size(px(stepped))
                                     .rounded_full()
-                                    .bg(color.opacity(opacity))
+                                    .bg(shaded(color).opacity(opacity))
                             }))
                     })),
             )
-            .child(div().absolute().inset_0().bg(gpui::black().opacity(SHADE)))
             // Every buffer the field passes through holds eight bits a channel, and a gradient
             // this wide and this dark steps through only a few dozen of them, so its steps read
             // as bands that slide with the blobs. The dither scatters each step over
@@ -276,6 +293,21 @@ impl Render for Ambient {
 /// glass on its controls as well, which only has the field to blur.
 pub(crate) fn shown(cx: &App) -> bool {
     Sonora::global(cx).settings.read(cx).ambient()
+}
+
+/// A colour as the dark overlay leaves it. Black at `SHADE` over an opaque colour is that
+/// colour's channels cut by what the sheet lets through, so cutting them here is the same
+/// picture with one layer fewer to spend the window's alpha on.
+fn shaded(color: Hsla) -> Hsla {
+    let rgba = Rgba::from(color);
+    let kept = 1. - SHADE;
+
+    Hsla::from(Rgba {
+        r: rgba.r * kept,
+        g: rgba.g * kept,
+        b: rgba.b * kept,
+        a: rgba.a,
+    })
 }
 
 /// Straight-line blend between two colours through RGB, so a wash between two

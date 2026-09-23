@@ -5,7 +5,7 @@ use gpui::{
 };
 
 use crate::button::Button;
-use crate::glass::glass;
+use crate::glass::{blurring, glass};
 use crate::scrollbar::{Scrollbar, activate_middle_scroll, cancel_middle_scroll};
 use crate::theme::ActiveTheme as _;
 
@@ -167,6 +167,10 @@ pub fn middle_scroll(surface: Div, bar: &Entity<Scrollbar>) -> Div {
 /// still lets the wheel through. The caller places it with `bottom_*`.
 pub fn perched(button: Button, cx: &App) -> Div {
     let theme = *cx.theme();
+    let button = match blurring(cx) {
+        true => glass(button, cx),
+        false => button.bg(theme.popover),
+    };
 
     div()
         .absolute()
@@ -176,7 +180,7 @@ pub fn perched(button: Button, cx: &App) -> Div {
         .justify_center()
         .child(
             div().flex().flex_none().block_mouse_except_scroll().child(
-                glass(button, cx)
+                button
                     .ghost()
                     .small()
                     .rounded_full()

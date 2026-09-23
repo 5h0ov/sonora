@@ -26,7 +26,8 @@ pub(crate) enum Edge {
 /// The renderer blurs a run of consecutive backdrops once, by the widest radius among them, and
 /// honours each one's opacity, so the strips cost one blur pass a frame. Interleaving anything
 /// between them splits that into a pass each, which lags. With effects off there is no blur to
-/// fade and the band is the plain colour instead.
+/// fade and the band is the plain colour instead. The Blur UI setting never reaches it: a band
+/// is there to keep what floats over it readable, not for the look of it.
 pub(crate) fn veil(
     edge: Edge,
     height: Pixels,

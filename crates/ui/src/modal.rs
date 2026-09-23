@@ -8,7 +8,7 @@ use gpui::{
 };
 
 use crate::button::Button;
-use crate::metrics::{Text, snapped};
+use crate::metrics::{Rounding, Text, snapped};
 use crate::motion::Rising as _;
 use crate::scrollbar::Scrollbar;
 use crate::scroller::middle_scroll;
@@ -17,6 +17,10 @@ use crate::theme::ActiveTheme as _;
 
 const BACKDROP: f32 = 0.8;
 const WIDTH: f32 = 2.4;
+/// How many times the theme radius a dialog's corners take. A surface this large reads square at
+/// the radius a button uses, and scaling it keeps a dialog square when corners are set to square.
+/// The scaled radius never passes what Rounded gives, since Round doubled bulges a dialog.
+const ROUNDING: f32 = 2.;
 
 type Dismiss = Rc<dyn Fn(&(), &mut Window, &mut App)>;
 
@@ -172,7 +176,7 @@ impl RenderOnce for Modal {
                     .max_h_full()
                     .flex()
                     .flex_col()
-                    .rounded(theme.radius)
+                    .rounded(corners(theme.radius))
                     .border_1()
                     .border_color(theme.border)
                     .bg(theme.popover)
@@ -280,4 +284,10 @@ impl RenderOnce for Modal {
                 .child(frame),
         )
     }
+}
+
+/// The dialog's corner radius for a theme radius: `ROUNDING` times it, capped at what the Rounded
+/// setting gives.
+fn corners(radius: Pixels) -> Pixels {
+    (radius * ROUNDING).min(Rounding::Rounded.radius() * ROUNDING)
 }

@@ -89,6 +89,7 @@ impl DetailView {
                 DetailTracks(detail.clone()),
                 playback.clone(),
                 playlist_scrollbar,
+                cx,
             );
             let source = match show_liked {
                 true => source.with_liked(Sonora::global(cx).library.clone()),

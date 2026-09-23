@@ -145,7 +145,7 @@ impl SearchView {
             albums: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
             mixed: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
             browsing: cx.new(|_| Scrollbar::new(ScrollHandle::new()).watching(me)),
-            track_menu: ItemMenu::new(playlist_scrollbar),
+            track_menu: ItemMenu::new(playlist_scrollbar, cx),
             context_menu: None,
             focus: cx.focus_handle(),
             cursor: None,
