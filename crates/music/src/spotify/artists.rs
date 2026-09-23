@@ -160,7 +160,9 @@ async fn popular(session: &Session, releases: &[Album], known: &[Track]) -> Resu
     Ok(rest)
 }
 
-async fn discography(session: &Session, artist_id: &str) -> Result<Vec<Album>> {
+/// Every release of an artist, newest first: the albums tab of an album page reads its
+/// more-from-the-artist half off this.
+pub(crate) async fn discography(session: &Session, artist_id: &str) -> Result<Vec<Album>> {
     let message = metadata(session, artist_id).await?;
     releases(session, &message).await
 }

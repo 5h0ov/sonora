@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - The visualizer can ignore Sonora's volume. Turn on Ignore volume under Fullscreen in
   Appearance settings and the bars stay full height when you turn the music down.
+- Album pages now carry recommendations wherever the provider offers them: related
+  releases and similar artists under Albums and Artists tabs, and Apple Music artists
+  list what they appear on.
 
 ### Fixed
 
@@ -36,9 +39,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Albanian (Shqip) interface language.
 - Guest mode now serves recommendations from your local music collection on the Home screen,
   including Quick picks, recently added albums, local playlists, and artists.
-- Apple Music pages now carry recommendations: an artist page lists what the artist
-  appears on, and an album page holds related releases and similar artists under one
-  rail with Albums and Artists tabs.
 
 ### Changed
 

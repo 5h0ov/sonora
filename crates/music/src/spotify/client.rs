@@ -11,8 +11,8 @@ use crate::spotify::{
     albums, artists, collection, collection2, pathfinder, playlists, profiles, radio, search, wire,
 };
 use crate::{
-    Album, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, Genre, GenreDetail, HomeFeed,
-    Playlist, PlaylistDetail, SavedArtist, Track, UserDetail, UserProfile,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, Genre, GenreDetail,
+    HomeFeed, Playlist, PlaylistDetail, SavedArtist, Track, UserDetail, UserProfile,
 };
 
 const MADE_FOR_YOU: &str = "0JQ5DAt0tbjZptfcdMSKl3";
@@ -135,6 +135,27 @@ impl MusicApi for LibrespotClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         albums::album_tracks(&self.session, album_id).await
+    }
+
+    /// The artist's own releases without the album the page is already showing. Similar
+    /// artists stay out: the internal queries are persisted by hash, so nothing here can
+    /// ask for a relationship the official client never registered.
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let Some(artist_id) = artist_id else {
+            return Ok(AlbumCatalogue::default());
+        };
+        let mut also_like = artists::discography(&self.session, artist_id)
+            .await
+            .with_context(|| format!("cannot load more from artist {artist_id}"))?;
+        also_like.retain(|album| album.id != album_id);
+        Ok(AlbumCatalogue {
+            also_like,
+            similar: Vec::new(),
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {
