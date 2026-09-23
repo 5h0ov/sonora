@@ -22,12 +22,13 @@ use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use serde_json::Value;
 
 use crate::apple::auth::{self, AGENT};
+use crate::apple::recommend;
 use crate::apple::wire;
 use crate::engine::Loudness;
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem, GenreSection,
-    HomeFeed, MediaKind, MusicApi, Page, Pages, PinOutcome, PinTarget, PinTargetKind, Playlist,
-    PlaylistDetail, SavedArtist, Track, UserProfile, escape,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, Genre, GenreDetail,
+    GenreItem, GenreSection, HomeFeed, MediaKind, MusicApi, Page, Pages, PinOutcome, PinTarget,
+    PinTargetKind, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile, escape,
 };
 
 /// The API the web player calls.
@@ -239,7 +240,7 @@ impl AppleClient {
         &self.storefront
     }
 
-    fn catalog(&self, path: &str) -> String {
+    pub(crate) fn catalog(&self, path: &str) -> String {
         format!("/catalog/{}{path}", escape::component(&self.storefront))
     }
 
@@ -355,7 +356,7 @@ impl AppleClient {
         Ok(answered)
     }
 
-    async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
+    pub(crate) async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
         self.send(reqwest::Method::GET, path, query, None).await
     }
 
@@ -1217,6 +1218,14 @@ impl MusicApi for AppleClient {
         Ok(self.album(album_id).await?.tracks)
     }
 
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        recommend::album_catalogue(self, album_id, artist_id).await
+    }
+
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
         let id = match Self::is_mine(artist_id) {
             true => self
@@ -1246,6 +1255,10 @@ impl MusicApi for AppleClient {
             .pointer("/data/0")
             .and_then(wire::artist)
             .with_context(|| format!("cannot read the apple artist {id}"))
+    }
+
+    async fn artist_catalogue(&self, artist_id: &str, _known: &[Track]) -> Result<ArtistCatalogue> {
+        recommend::artist_catalogue(self, artist_id).await
     }
 
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {

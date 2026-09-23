@@ -36,6 +36,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Albanian (Shqip) interface language.
 - Guest mode now serves recommendations from your local music collection on the Home screen,
   including Quick picks, recently added albums, local playlists, and artists.
+- Apple Music pages now carry recommendations: an artist page lists what the artist
+  appears on, and an album page holds related releases and similar artists under one
+  rail with Albums and Artists tabs.
 
 ### Changed
 

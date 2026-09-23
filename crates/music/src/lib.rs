@@ -38,10 +38,10 @@ use async_trait::async_trait;
 
 pub use equalizer::Equalizer;
 pub use models::{
-    Album, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, ArtistRef, Contributor, Credit,
-    Genre, GenreDetail, GenreItem, GenreSection, HomeFeed, Lyrics, LyricsHit, LyricsLane,
-    LyricsLine, LyricsQuery, LyricsWord, PinOutcome, PinTarget, PinTargetKind, Playlist,
-    PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey, TrackTags,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, ArtistRef,
+    Contributor, Credit, Genre, GenreDetail, GenreItem, GenreSection, HomeFeed, Lyrics, LyricsHit,
+    LyricsLane, LyricsLine, LyricsQuery, LyricsWord, PinOutcome, PinTarget, PinTargetKind,
+    Playlist, PlaylistDetail, ReleaseType, RomanizedText, SavedArtist, Track, TrackKey, TrackTags,
     UserDetail, UserProfile, Voice, WritingSystem,
 };
 pub use spectrum::Spectrum;
@@ -221,6 +221,20 @@ pub trait MusicApi: Send + Sync {
     async fn set_artist_saved(&self, artist_id: &str, saved: bool) -> Result<()>;
     async fn album(&self, album_id: &str) -> Result<AlbumDetail>;
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>>;
+
+    /// The rest of an album page, fetched once `album` has put the tracks up: the releases
+    /// the provider lists as related, with more from the same artist first and similar
+    /// artists' releases topping the rail up. `artist_id` is
+    /// the page's artist when the album names one the app can follow. A provider whose
+    /// `album` already answers with everything leaves the default, which is nothing more
+    /// to fetch.
+    async fn album_catalogue(
+        &self,
+        _album_id: &str,
+        _artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        Ok(AlbumCatalogue::default())
+    }
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail>;
     async fn playlist_continuation(
         &self,

@@ -366,6 +366,10 @@ artist-filter-all = Wszystkie
 artist-filter-albums = Albumy
 artist-filter-singles = Single
 artist-filter-eps = EP
+artist-appears-on = Występuje w
+album-also-like = Może Ci się spodobać
+album-tab-albums = Albumy
+album-tab-artists = Artyści
 
 # user profile page
 user-eyebrow = Profil

@@ -48,7 +48,11 @@ pub async fn catalogue(
     }
     let top_tracks = deepened(session, known, &albums).await;
 
-    Ok(ArtistCatalogue { albums, top_tracks })
+    Ok(ArtistCatalogue {
+        albums,
+        top_tracks,
+        ..Default::default()
+    })
 }
 
 pub async fn profile(session: &Session, artist_id: &str) -> Result<ArtistProfile> {

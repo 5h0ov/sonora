@@ -4,6 +4,8 @@ use gpui::{
     WeakEntity, Window, div, px,
 };
 
+use std::rc::Rc;
+
 use i18n::t;
 use music::{Album, Playlist, Track};
 use router::{Destination, navigate};
@@ -21,8 +23,11 @@ use crate::shared::trouble;
 
 use crate::chrome::tools::{self, Sliders};
 use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
+use crate::shared::album_grid::CardGrid;
+use crate::shared::cards;
 use crate::shared::confirm::Confirm;
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero, release_date_label};
+use crate::shared::shelves::{Rail, RailSpec};
 use crate::shared::tracks::{
     PlaybackStatus, TrackField, TrackSource, Tracks, drop_picked, playback_status, playlist_columns,
 };
@@ -33,6 +38,29 @@ const PINNED: [&str; 3] = ["cover", "title", "name"];
 enum Saveable {
     Album(Album),
     Playlist(Playlist),
+}
+
+/// Which list the recommendation rail shows: releases, or artists.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RailTab {
+    Albums,
+    Artists,
+}
+
+impl RailTab {
+    fn id(self) -> &'static str {
+        match self {
+            Self::Albums => "rail-tab-albums",
+            Self::Artists => "rail-tab-artists",
+        }
+    }
+
+    fn label(self) -> SharedString {
+        match self {
+            Self::Albums => t!("album-tab-albums"),
+            Self::Artists => t!("album-tab-artists"),
+        }
+    }
 }
 
 struct DetailTracks(Entity<Detail>);
@@ -63,6 +91,10 @@ pub(crate) struct DetailView {
     popovers: Popovers,
     sliders: Sliders,
     me: WeakEntity<Self>,
+    /// The recommendation rail under the table.
+    rails: Vec<Rail>,
+    /// Which list the recommendation rail shows.
+    rail_tab: RailTab,
 }
 
 impl DetailView {
@@ -128,6 +160,8 @@ impl DetailView {
             let shown = detail.read(cx).id().map(str::to_owned);
             if this.shown != shown {
                 this.shown = shown;
+                this.rails.clear();
+                this.rail_tab = RailTab::Albums;
                 this.scrollbar
                     .read(cx)
                     .scroll()
@@ -219,6 +253,8 @@ impl DetailView {
             popovers: Popovers::default(),
             sliders: Sliders::default(),
             me: me.downgrade(),
+            rails: Vec::new(),
+            rail_tab: RailTab::Albums,
         };
         view.restore_filters(cx);
         view
@@ -456,6 +492,120 @@ impl DetailView {
         )
     }
 
+    /// The recommendation rail under the table, on album pages only: related releases
+    /// under the albums tab, similar artists under the artists tab. The tabs show while
+    /// both lists hold something. A rail still on its way reads as skeletons only while
+    /// nothing of it is up.
+    fn recommended(
+        &self,
+        window: &Window,
+        notify: &Rc<dyn Fn(&mut App)>,
+        cx: &mut App,
+    ) -> Vec<AnyElement> {
+        let grid = CardGrid::layout(self.width);
+        let card = grid.card;
+        let columns = grid.columns.max(1);
+        let detail = self.detail.read(cx);
+        if detail.album().is_none() {
+            return Vec::new();
+        }
+        let filling = detail.is_filling();
+        let albums = detail.also_like().len();
+        let artists = detail.similar().len();
+        if albums == 0 && artists == 0 {
+            return match filling {
+                true => vec![Rail::pending(
+                    t!("album-also-like"),
+                    card,
+                    columns,
+                    window,
+                    cx,
+                )],
+                false => Vec::new(),
+            };
+        }
+        // A tab without a list behind it is not one the page can be on.
+        let tab = match self.rail_tab {
+            RailTab::Albums if albums == 0 => RailTab::Artists,
+            RailTab::Artists if artists == 0 => RailTab::Albums,
+            tab => tab,
+        };
+
+        let opened = self.me.clone();
+        let tabs = match albums > 0 && artists > 0 {
+            false => None,
+            true => {
+                let opened = opened.clone();
+                Some(
+                    div()
+                        .flex()
+                        .gap_1()
+                        .children([RailTab::Albums, RailTab::Artists].into_iter().map(|tab| {
+                            let opened = opened.clone();
+                            Button::new(tab.id())
+                                .label(tab.label())
+                                .small()
+                                .outline()
+                                .selected(tab == self.rail_tab)
+                                .on_click(move |_, _, cx| {
+                                    opened
+                                        .update(cx, |this, cx| {
+                                            this.rail_tab = tab;
+                                            cx.notify();
+                                        })
+                                        .ok();
+                                })
+                        }))
+                        .into_any_element(),
+                )
+            }
+        };
+        vec![self.rails[0].render(
+            RailSpec {
+                tag: "detail-also-like",
+                place: 0,
+                title: t!("album-also-like"),
+                count: match tab {
+                    RailTab::Albums => albums,
+                    RailTab::Artists => artists,
+                },
+                tile: card,
+                columns,
+                tabs,
+            },
+            window,
+            cx,
+            notify,
+            move |position, _, cx| {
+                let Some(view) = opened.upgrade() else {
+                    return div().into_any_element();
+                };
+                let held = view.read(cx);
+                let detail = held.detail.read(cx);
+                match tab {
+                    RailTab::Albums => {
+                        let Some(album) = detail.also_like().get(position) else {
+                            return div().into_any_element();
+                        };
+                        cards::album_card(("detail-also-like", position), album, &held.playback, cx)
+                            .tile(card)
+                            .flat()
+                            .into_any_element()
+                    }
+                    RailTab::Artists => {
+                        let Some(artist) = detail.similar().get(position) else {
+                            return div().into_any_element();
+                        };
+                        cards::artist_card(("detail-similar", position), artist, &held.playback, cx)
+                            .tile(card)
+                            .flat()
+                            .into_any_element()
+                    }
+                }
+            },
+        )]
+    }
+
     fn menu(&self, cx: &App) -> Option<Menu> {
         let detail = self.detail.read(cx);
         let id = detail.id()?.to_owned();
@@ -503,6 +653,18 @@ impl Render for DetailView {
             )
         });
 
+        while self.rails.is_empty() {
+            self.rails.push(Rail::new(cx.entity_id()));
+        }
+        for rail in &self.rails {
+            rail.sync();
+        }
+        let weak = cx.entity().downgrade();
+        let notify: Rc<dyn Fn(&mut App)> = Rc::new(move |cx: &mut App| {
+            weak.update(cx, |_, cx| cx.notify()).ok();
+        });
+        let rails = self.recommended(window, &notify, cx);
+
         div()
             .relative()
             .size_full()
@@ -511,7 +673,8 @@ impl Render for DetailView {
                     .pt(inset)
                     .pb(inset)
                     .child(div().px(inset).child(self.header(cx)))
-                    .child(table(&self.table)),
+                    .child(table(&self.table))
+                    .child(div().px(inset).pt_6().children(rails)),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }
