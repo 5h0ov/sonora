@@ -25,7 +25,7 @@ use state::{
 use ui::{
     ActiveTheme as _, Button, Card, Deck, FilterChange, LEADING, Mode, Pinnable, Popovers, Popup,
     Scrollbar, Scroller, Sort, SortAxis, TableDelegate, TableEvent, TableSource, TableState, Text,
-    Toggle, Vacancy, Viewport, clock, heading, quantize, scrolled, snapped, table,
+    Toggle, Vacancy, Viewport, heading, quantize, runtime, scrolled, snapped, table,
 };
 
 use crate::shared::album_grid::{AlbumGrid, CardGrid};
@@ -605,7 +605,7 @@ impl LibraryView {
             .sum();
         let mut strip = HeroMetaStrip::new().text(t!("count-songs", count = count));
         if !duration.is_zero() {
-            strip = strip.text(clock(duration));
+            strip = strip.text(runtime(duration));
         }
         let (title, icon, eyebrow) = match (self.shape(cx), self.shelf) {
             (Shape::Catalog, Shelf::Local) => {

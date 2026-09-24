@@ -15,7 +15,7 @@ use ui::{
 };
 use ui::{
     ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pin, PinKind, Scrollbar, Scroller,
-    TableDelegate, TableEvent, TableState, Toggle, clock, table,
+    TableDelegate, TableEvent, TableState, Toggle, runtime, table,
 };
 
 use crate::shared::menus::{album_menu, playlist_menu};
@@ -381,7 +381,7 @@ impl DetailView {
             strip = strip.text(t!("count-songs", count = track_count));
         }
         if !duration.is_zero() {
-            strip = strip.text(clock(duration));
+            strip = strip.text(runtime(duration));
         }
 
         let overflow = self.menu(cx).map(|menu| {

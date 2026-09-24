@@ -465,6 +465,11 @@ count-tracks =
        *[other] { $count } tracks
     }
 
+# running times
+runtime-seconds = { $seconds }s
+runtime-minutes = { $minutes }m { $seconds }s
+runtime-hours = { $hours }h { $minutes }m
+
 # dates
 date-just-now = Just now
 date-minute-ago = A minute ago
