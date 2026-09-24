@@ -320,6 +320,8 @@ struct Appearance {
     ambient_motion: bool,
     visualizer: bool,
     visualizer_style: String,
+    /// Whether the visualizer draws the track at its own level rather than at the volume.
+    visualizer_absolute: bool,
     icons: String,
     rounding: String,
     /// Whether the app paints its frosted treatments. The key kept its old name, which stood
@@ -514,6 +516,7 @@ impl Default for Appearance {
             ambient_motion: true,
             visualizer: true,
             visualizer_style: ui::VisualizerStyle::default().id().to_owned(),
+            visualizer_absolute: false,
             icons: icons::BASE.to_owned(),
             rounding: Rounding::Rounded.id().to_owned(),
             blur: true,
@@ -851,6 +854,11 @@ impl AppSettings {
             true => ui::VisualizerStyle::from_id(&self.values.appearance.visualizer_style),
             false => ui::VisualizerStyle::None,
         }
+    }
+
+    /// Whether the visualizer ignores Sonora's volume and draws the track at its own level.
+    pub fn visualizer_absolute(&self) -> bool {
+        self.values.appearance.visualizer_absolute
     }
 
     pub fn fullscreen_controls_autohide(&self) -> FullscreenControlsAutohide {
@@ -1451,6 +1459,11 @@ impl AppSettings {
         if style.shown() {
             self.values.appearance.visualizer_style = style.id().to_owned();
         }
+        self.schedule_save(cx);
+    }
+
+    pub fn set_visualizer_absolute(&mut self, absolute: bool, cx: &mut Context<Self>) {
+        self.values.appearance.visualizer_absolute = absolute;
         self.schedule_save(cx);
     }
 

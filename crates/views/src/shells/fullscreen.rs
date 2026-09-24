@@ -1092,7 +1092,7 @@ impl Render for FullscreenView {
         let style = self.settings.read(cx).visualizer_style();
         let visualizer_on = self.panel.is_none() && style.shown();
         match visualizer_on
-            .then(|| self.playback.read(cx).spectrum())
+            .then(|| self.playback.read(cx).spectrum(cx))
             .flatten()
         {
             Some(spectrum) => self.visualizer.show(cx.entity_id(), spectrum, window),

@@ -510,8 +510,12 @@ impl Playback {
         self.engine_for(id)
     }
 
-    pub fn spectrum(&self) -> Option<Spectrum> {
-        self.active_engine()?.spectrum()
+    /// The playing engine's spectrum, set to hear the track before or after the volume as the
+    /// visualizer setting asks.
+    pub fn spectrum(&self, cx: &App) -> Option<Spectrum> {
+        let spectrum = self.active_engine()?.spectrum()?;
+        spectrum.set_absolute(self.settings.read(cx).visualizer_absolute());
+        Some(spectrum)
     }
 
     /// Pauses the engine the new track does not belong to, so the two never sound at once.

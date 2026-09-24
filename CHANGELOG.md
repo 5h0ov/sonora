@@ -7,6 +7,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The visualizer can ignore Sonora's volume. Turn on Ignore volume under Fullscreen in
+  Appearance settings and the bars stay full height when you turn the music down.
+
+### Fixed
+
+- Loud tracks no longer flatten the top of the visualizer wave.
+
 ## [0.39.0] - 2026-09-24
 
 ### Added

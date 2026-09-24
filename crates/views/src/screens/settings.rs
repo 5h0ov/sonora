@@ -133,6 +133,7 @@ enum Slot {
     Ambient,
     AmbientMotion,
     Visualizer,
+    VisualizerAbsolute,
     Icons,
     Opacity,
     WindowBlur,
@@ -570,8 +571,15 @@ impl SettingsView {
                     .ambient()
                     .then_some(Slot::AmbientMotion),
             )
+            .chain([Slot::Visualizer])
+            .chain(
+                self.settings
+                    .read(cx)
+                    .visualizer_style()
+                    .shown()
+                    .then_some(Slot::VisualizerAbsolute),
+            )
             .chain([
-                Slot::Visualizer,
                 Slot::FullscreenControlsAutohide,
                 Slot::Title("settings-group-lyrics"),
                 Slot::PanelLyricsSize,
@@ -671,6 +679,10 @@ impl SettingsView {
                 t!("settings-ambient-motion-detail"),
             ),
             Slot::Visualizer => (t!("settings-visualizer"), t!("settings-visualizer-detail")),
+            Slot::VisualizerAbsolute => (
+                t!("settings-visualizer-absolute"),
+                t!("settings-visualizer-absolute-detail"),
+            ),
             Slot::Icons => (t!("settings-icons"), t!("settings-icons-detail")),
             Slot::Opacity => (t!("settings-opacity"), t!("settings-opacity-detail")),
             Slot::WindowBlur => (
@@ -910,6 +922,7 @@ impl SettingsView {
             Slot::Ambient => self.ambient_row(cx).element,
             Slot::AmbientMotion => self.ambient_motion_row(cx).element,
             Slot::Visualizer => self.visualizer_style_row(cx).element,
+            Slot::VisualizerAbsolute => self.visualizer_absolute_row(cx).element,
             Slot::Icons => self.icons_row(cx).element,
             Slot::Opacity => self.opacity_row(cx).element,
             Slot::WindowBlur => self.blur_window_row(cx).element,
@@ -1855,6 +1868,26 @@ impl SettingsView {
             muted,
             small,
             picker.into_any_element(),
+        )
+    }
+
+    fn visualizer_absolute_row(&self, cx: &mut Context<Self>) -> Setting {
+        let theme = *cx.theme();
+        let muted = theme.muted_foreground;
+        let small = theme.text(Text::Small);
+        let on = self.settings.read(cx).visualizer_absolute();
+
+        self.row(
+            t!("settings-visualizer-absolute"),
+            t!("settings-visualizer-absolute-detail"),
+            muted,
+            small,
+            Switch::new("visualizer-absolute", on)
+                .on_click(cx.listener(move |this, _, _, cx| {
+                    this.settings
+                        .update(cx, |settings, cx| settings.set_visualizer_absolute(!on, cx));
+                }))
+                .into_any_element(),
         )
     }
 
