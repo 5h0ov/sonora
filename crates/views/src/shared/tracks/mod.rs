@@ -17,7 +17,9 @@ use gpui::{
 use music::{Shape, Track};
 use router::Destination;
 use state::{Detail, History, Library, Origin, Playback, PlaybackState, Shelf, Sonora};
-use ui::{Button, Cell, ColumnSpec, Menu, Pin, ROW_GROUP, Scrollbar, TableSource, TableState};
+use ui::{
+    Button, Cell, ColumnSpec, Menu, Pending, Pin, ROW_GROUP, Scrollbar, TableSource, TableState,
+};
 
 use crate::shared::cells;
 use crate::shared::confirm::{Confirm, Kind};
@@ -41,6 +43,12 @@ pub(crate) fn playback_status(playback: &Entity<Playback>, cx: &App) -> Playback
 pub(crate) trait Tracks: 'static {
     fn tracks<'a>(&self, cx: &'a App) -> &'a [Track];
     fn is_loading(&self, cx: &App) -> bool;
+
+    /// The skeleton rows the table draws before the first tracks arrive. A list that
+    /// leaves the default shows nothing while it loads.
+    fn pending(&self, _cx: &App) -> Option<Pending> {
+        None
+    }
 }
 
 pub(crate) fn first_playable(table: &Entity<TableState<TrackSource>>, cx: &App) -> Option<usize> {
@@ -590,6 +598,10 @@ impl TableSource for TrackSource {
 
     fn is_loading(&self, cx: &App) -> bool {
         self.provider.is_loading(cx)
+    }
+
+    fn pending(&self, cx: &App) -> Option<Pending> {
+        self.provider.pending(cx)
     }
 
     fn pin(&self, row: usize, cx: &App) -> Option<Pin> {

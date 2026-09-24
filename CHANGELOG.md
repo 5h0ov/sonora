@@ -16,6 +16,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   list what they appear on.
 - Album pages print the release's copyright line or record label under the tracks, on
   Apple Music, Spotify, Deezer and OpenSubsonic servers that list one.
+- Album and playlist pages hold placeholder rows while their tracks load, as many as the
+  release has when Sonora already knows the count, so the page no longer jumps when they arrive.
 
 ### Changed
 
