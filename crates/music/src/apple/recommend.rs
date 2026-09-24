@@ -18,14 +18,16 @@ use crate::{Album, AlbumCatalogue, ArtistCatalogue, SUGGESTIONS, SavedArtist};
 const SIMILAR_ARTISTS: usize = 6;
 const SIMILAR_RELEASES: usize = 2;
 
-/// The appears-on view of one artist, read in a single request.
+/// The appears-on view of one artist, read in a single request once a library id has been
+/// turned into the catalog's.
 pub(crate) async fn artist_catalogue(
     client: &AppleClient,
     artist_id: &str,
 ) -> Result<ArtistCatalogue> {
+    let artist_id = client.catalog_artist(artist_id).await?;
     let answered = client
         .get(
-            &client.catalog(&format!("/artists/{}", escape::component(artist_id))),
+            &client.catalog(&format!("/artists/{}", escape::component(&artist_id))),
             &[("views", "appears-on-albums")],
         )
         .await?;
@@ -42,8 +44,12 @@ pub(crate) async fn artist_catalogue(
     })
 }
 
-/// The related-albums view of one album, without the album itself.
+/// The related-albums view of one album, without the album itself. A library album that is
+/// not in the catalog has no related albums to read.
 async fn related_albums(client: &AppleClient, album_id: &str) -> Result<Vec<Album>> {
+    if AppleClient::is_mine(album_id) {
+        return Ok(Vec::new());
+    }
     let answered = client
         .get(
             &client.catalog(&format!("/albums/{}", escape::component(album_id))),
@@ -68,6 +74,7 @@ async fn more_from_artist(
     album_id: &str,
     artist_id: &str,
 ) -> Result<(Vec<Album>, Vec<SavedArtist>)> {
+    let artist_id = &client.catalog_artist(artist_id).await?;
     let answered = client
         .get(
             &client.catalog(&format!("/artists/{}", escape::component(artist_id))),
@@ -145,6 +152,13 @@ pub(crate) async fn album_catalogue(
         }
     };
     let (also_like, more) = tokio::join!(related, more);
+    // Nothing read at all is an error rather than an empty rail, so the catalog does not keep
+    // the empty answer for the rest of the session.
+    let (also_like, more) = match (also_like, more) {
+        (Err(error), Err(_)) => return Err(error.context("cannot read any recommendations")),
+        (Err(error), _) if artist_id.is_none() => return Err(error),
+        pair => pair,
+    };
     if let Err(error) = &also_like {
         log::warn!("apple: cannot read the related albums: {error:#}");
     }

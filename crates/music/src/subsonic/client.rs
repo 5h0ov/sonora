@@ -611,6 +611,12 @@ impl MusicApi for SubsonicClient {
             self.more_from_artist(album_id, artist_id),
             self.similar_artists(artist_id),
         );
+        // Nothing read at all is an error rather than an empty rail, so the catalog does not
+        // keep the empty answer for the rest of the session.
+        let (more_by, similar) = match (more_by, similar) {
+            (Err(error), Err(_)) => return Err(error.context("cannot read any recommendations")),
+            pair => pair,
+        };
         if let Err(error) = &more_by {
             log::warn!("subsonic: cannot read more from this artist: {error:#}");
         }
