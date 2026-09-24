@@ -359,7 +359,10 @@ impl DeezerClient {
     /// The artist's own albums without the album the page is already showing.
     async fn more_from_artist(&self, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
         let page = self
-            .public(&format!("/artist/{artist_id}/albums?limit=50"))
+            .public(&format!(
+                "/artist/{}/albums?limit=50",
+                escape::component(artist_id)
+            ))
             .await
             .with_context(|| format!("cannot load more from artist {artist_id}"))?;
         Ok(page
@@ -376,7 +379,7 @@ impl DeezerClient {
     /// The artists Deezer lists as related, for the rail's artists tab.
     async fn similar_artists(&self, artist_id: &str) -> Result<Vec<SavedArtist>> {
         let page = self
-            .public(&format!("/artist/{artist_id}/related"))
+            .public(&format!("/artist/{}/related", escape::component(artist_id)))
             .await
             .with_context(|| format!("cannot load artists related to {artist_id}"))?;
         Ok(page

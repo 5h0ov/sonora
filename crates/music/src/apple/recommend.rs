@@ -10,6 +10,7 @@ use anyhow::{Context as _, Result};
 
 use crate::apple::client::AppleClient;
 use crate::apple::wire;
+use crate::escape;
 use crate::{Album, AlbumCatalogue, ArtistCatalogue, SavedArtist};
 
 /// How many similar artists lend their releases to a thin rail, how many releases each
@@ -25,7 +26,7 @@ pub(crate) async fn artist_catalogue(
 ) -> Result<ArtistCatalogue> {
     let answered = client
         .get(
-            &client.catalog(&format!("/artists/{artist_id}")),
+            &client.catalog(&format!("/artists/{}", escape::component(artist_id))),
             &[("views", "appears-on-albums")],
         )
         .await?;
@@ -45,7 +46,7 @@ pub(crate) async fn artist_catalogue(
 async fn related_albums(client: &AppleClient, album_id: &str) -> Result<Vec<Album>> {
     let answered = client
         .get(
-            &client.catalog(&format!("/albums/{album_id}")),
+            &client.catalog(&format!("/albums/{}", escape::component(album_id))),
             &[("views", "related-albums")],
         )
         .await
@@ -69,7 +70,7 @@ async fn more_from_artist(
 ) -> Result<(Vec<Album>, Vec<SavedArtist>)> {
     let answered = client
         .get(
-            &client.catalog(&format!("/artists/{artist_id}")),
+            &client.catalog(&format!("/artists/{}", escape::component(artist_id))),
             &[("views", "full-albums,singles,similar-artists")],
         )
         .await
@@ -94,7 +95,7 @@ async fn more_from_artist(
 async fn releases_by(client: &AppleClient, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
     let answered = client
         .get(
-            &client.catalog(&format!("/artists/{artist_id}")),
+            &client.catalog(&format!("/artists/{}", escape::component(artist_id))),
             &[("views", "full-albums,singles")],
         )
         .await
