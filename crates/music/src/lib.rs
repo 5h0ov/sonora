@@ -51,6 +51,10 @@ pub const LOCAL_ALBUM_PREFIX: &str = "local-album:";
 pub const LOCAL_ARTIST_PREFIX: &str = "local-artist:";
 pub const LOCAL_PLAYLIST_PREFIX: &str = "local-playlist:";
 
+/// The most recommendations a provider hands one list of an album or artist page, so a
+/// rail never asks for or draws more than this many releases or artists.
+pub const SUGGESTIONS: usize = 10;
+
 pub fn is_local_id(id: &str) -> bool {
     id.starts_with(LOCAL_TRACK_PREFIX)
         || id.starts_with(LOCAL_ALBUM_PREFIX)

@@ -9,7 +9,8 @@ use ytmusic::YtMusic;
 use crate::youtube::{genres, radio, subscriptions, wire};
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Feed, Genre, GenreDetail, HomeFeed,
-    MediaKind, MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile, escape,
+    MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, UserProfile,
+    escape,
 };
 
 const PORTRAIT_LIMIT: usize = 24;
@@ -294,6 +295,7 @@ impl MusicApi for YouTubeClient {
             .chain(artist.singles)
             .map(wire::album)
             .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
             .collect();
         Ok(AlbumCatalogue {
             also_like,

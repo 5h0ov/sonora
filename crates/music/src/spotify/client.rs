@@ -12,7 +12,7 @@ use crate::spotify::{
 };
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, Genre, GenreDetail,
-    HomeFeed, Playlist, PlaylistDetail, SavedArtist, Track, UserDetail, UserProfile,
+    HomeFeed, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, UserDetail, UserProfile,
 };
 
 const MADE_FOR_YOU: &str = "0JQ5DAt0tbjZptfcdMSKl3";
@@ -152,6 +152,7 @@ impl MusicApi for LibrespotClient {
             .await
             .with_context(|| format!("cannot load more from artist {artist_id}"))?;
         also_like.retain(|album| album.id != album_id);
+        also_like.truncate(SUGGESTIONS);
         Ok(AlbumCatalogue {
             also_like,
             similar: Vec::new(),

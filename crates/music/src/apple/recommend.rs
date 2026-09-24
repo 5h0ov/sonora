@@ -11,13 +11,12 @@ use anyhow::{Context as _, Result};
 use crate::apple::client::AppleClient;
 use crate::apple::wire;
 use crate::escape;
-use crate::{Album, AlbumCatalogue, ArtistCatalogue, SavedArtist};
+use crate::{Album, AlbumCatalogue, ArtistCatalogue, SUGGESTIONS, SavedArtist};
 
-/// How many similar artists lend their releases to a thin rail, how many releases each
-/// lends, and how many releases the rail holds before they stop lending.
+/// How many similar artists lend their releases to a thin rail, and how many releases each
+/// lends.
 const SIMILAR_ARTISTS: usize = 6;
 const SIMILAR_RELEASES: usize = 2;
-const FULL_RAIL: usize = 12;
 
 /// The appears-on view of one artist, read in a single request.
 pub(crate) async fn artist_catalogue(
@@ -37,6 +36,7 @@ pub(crate) async fn artist_catalogue(
         appears_on: wire::view(found, "appears-on-albums")
             .iter()
             .filter_map(wire::album)
+            .take(SUGGESTIONS)
             .collect(),
         ..Default::default()
     })
@@ -160,11 +160,12 @@ pub(crate) async fn album_catalogue(
         .into_iter()
         .chain(also_like.unwrap_or_default())
         .filter(|album| seen.insert(album.id.clone()))
+        .take(SUGGESTIONS)
         .collect();
     let similar_ids: Vec<String> = similar.iter().map(|artist| artist.id.clone()).collect();
-    if liked.len() < FULL_RAIL && !similar_ids.is_empty() {
+    if liked.len() < SUGGESTIONS && !similar_ids.is_empty() {
         for album in similar_releases(client, album_id, &similar_ids).await {
-            if liked.len() >= FULL_RAIL {
+            if liked.len() >= SUGGESTIONS {
                 break;
             }
             if seen.insert(album.id.clone()) {
@@ -174,6 +175,6 @@ pub(crate) async fn album_catalogue(
     }
     Ok(AlbumCatalogue {
         also_like: liked,
-        similar,
+        similar: similar.into_iter().take(SUGGESTIONS).collect(),
     })
 }

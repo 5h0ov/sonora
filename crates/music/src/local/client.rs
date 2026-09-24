@@ -8,8 +8,8 @@ use storage::Database;
 
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed,
-    MediaKind, MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, TrackTags, UserProfile,
-    distinct_covers,
+    MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, TrackTags,
+    UserProfile, distinct_covers,
 };
 
 use super::index::Index;
@@ -429,6 +429,7 @@ impl MusicApi for LocalClient {
             also_like: albums
                 .into_iter()
                 .filter(|album| album.id != album_id && album.artists == artists)
+                .take(SUGGESTIONS)
                 .collect(),
             similar: Vec::new(),
         })

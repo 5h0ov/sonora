@@ -18,7 +18,8 @@ use crate::deezer::{decrypt, wire};
 use crate::engine::Loudness;
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, HomeFeed, MediaKind, MusicApi,
-    Playlist, PlaylistDetail, SavedArtist, Track, UserProfile, distinct_covers, escape,
+    Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, UserProfile, distinct_covers,
+    escape,
 };
 
 const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
@@ -35,11 +36,10 @@ const UPLOAD_FORMAT: &str = "MP3_MISC";
 const LIBRARY_PAGE: u32 = 2000;
 
 const PORTRAIT_LIMIT: usize = 24;
-/// How many related artists lend their albums to a thin rail, how many albums each
-/// lends, and how many releases the rail holds before they stop lending.
+/// How many related artists lend their albums to a thin rail, and how many albums each
+/// lends.
 const SIMILAR_ARTISTS: usize = 6;
 const SIMILAR_RELEASES: usize = 2;
-const FULL_RAIL: usize = 12;
 
 /// The public api allows fifty calls per five seconds from one address, so calls leave one
 /// at a time this far apart. A call above the limit waits for its slot instead of being
@@ -356,12 +356,14 @@ impl DeezerClient {
         Ok(())
     }
 
-    /// The artist's own albums without the album the page is already showing.
+    /// Up to `SUGGESTIONS` of the artist's own albums without the album the page is already
+    /// showing. One more is asked for, since the page's album may be among them.
     async fn more_from_artist(&self, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
         let page = self
             .public(&format!(
-                "/artist/{}/albums?limit=50",
-                escape::component(artist_id)
+                "/artist/{}/albums?limit={}",
+                escape::component(artist_id),
+                SUGGESTIONS + 1
             ))
             .await
             .with_context(|| format!("cannot load more from artist {artist_id}"))?;
@@ -373,13 +375,17 @@ impl DeezerClient {
             .iter()
             .filter_map(wire::album)
             .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
             .collect())
     }
 
-    /// The artists Deezer lists as related, for the rail's artists tab.
+    /// Up to `SUGGESTIONS` artists Deezer lists as related, for the rail's artists tab.
     async fn similar_artists(&self, artist_id: &str) -> Result<Vec<SavedArtist>> {
         let page = self
-            .public(&format!("/artist/{}/related", escape::component(artist_id)))
+            .public(&format!(
+                "/artist/{}/related?limit={SUGGESTIONS}",
+                escape::component(artist_id)
+            ))
             .await
             .with_context(|| format!("cannot load artists related to {artist_id}"))?;
         Ok(page
@@ -400,6 +406,7 @@ impl DeezerClient {
                     added_at: None,
                 })
             })
+            .take(SUGGESTIONS)
             .collect())
     }
 
@@ -799,15 +806,15 @@ impl MusicApi for DeezerClient {
             .collect();
         // One artist at a time, so a thin rail never holds more than one slot of the
         // quota while a search waits for its own.
-        if liked.len() < FULL_RAIL && !similar.is_empty() {
+        if liked.len() < SUGGESTIONS && !similar.is_empty() {
             for artist in similar.iter().take(SIMILAR_ARTISTS) {
-                if liked.len() >= FULL_RAIL {
+                if liked.len() >= SUGGESTIONS {
                     break;
                 }
                 match self.more_from_artist(album_id, &artist.id).await {
                     Ok(releases) => {
                         for album in releases.into_iter().take(SIMILAR_RELEASES) {
-                            if liked.len() >= FULL_RAIL {
+                            if liked.len() >= SUGGESTIONS {
                                 break;
                             }
                             if seen.insert(album.id.clone()) {
