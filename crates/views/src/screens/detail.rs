@@ -502,7 +502,7 @@ impl DetailView {
         notify: &Rc<dyn Fn(&mut App)>,
         cx: &mut App,
     ) -> Vec<AnyElement> {
-        let grid = CardGrid::layout(self.width);
+        let grid = CardGrid::layout(self.width - cx.theme().metrics.inset * 2.);
         let card = grid.card;
         let columns = grid.columns.max(1);
         let detail = self.detail.read(cx);
