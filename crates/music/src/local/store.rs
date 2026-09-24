@@ -67,6 +67,27 @@ impl Store {
             .context("cannot read local favorites")
     }
 
+    /// Local track IDs ordered by play count, then most recent play.
+    pub fn most_played(&self, limit: usize) -> Result<Vec<String>> {
+        let connection = self.open()?;
+        let mut query = connection
+            .prepare(
+                "SELECT track_id, COUNT(*) as count
+                 FROM plays
+                 WHERE track_id LIKE 'local:%'
+                 GROUP BY track_id
+                 ORDER BY count DESC, MAX(played_at) DESC
+                 LIMIT ?",
+            )
+            .context("cannot read most played local tracks")?;
+        let rows = query
+            .query_map(params![limit as i64], |row| row.get::<_, String>(0))
+            .context("cannot read most played local tracks")?;
+
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("cannot read most played local tracks")
+    }
+
     pub fn set_starred(&self, kind: Starred, id: &str, saved: bool) -> Result<()> {
         let connection = self.open()?;
         match saved {

@@ -113,9 +113,12 @@ impl HomeView {
         let shape = Shape::new(width, items.len());
         let pages = shape.pages;
         let page = self.quick_picks.fit(shape.columns, shape.pages);
-        let name = match Sonora::global(cx).session.read(cx).state() {
-            SessionState::SignedIn(profile) => Some(profile.display_name.clone()),
-            _ => None,
+        let name = match self.home.read(cx).is_local(cx) {
+            true => None,
+            false => match Sonora::global(cx).session.read(cx).state() {
+                SessionState::SignedIn(profile) => Some(profile.display_name.clone()),
+                _ => None,
+            },
         };
         let opened = items.clone();
         let home = cx.entity().downgrade();

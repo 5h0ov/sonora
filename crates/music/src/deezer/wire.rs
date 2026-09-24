@@ -23,6 +23,16 @@ pub fn text<'a>(value: &'a Value, keys: &[&str]) -> Option<&'a str> {
     keys.iter().find_map(|key| value.get(key))?.as_str()
 }
 
+/// The first fractional number under any of `keys`, spelled as a number or as a string.
+pub fn decimal(value: &Value, keys: &[&str]) -> Option<f64> {
+    keys.iter().find_map(|key| {
+        let field = value.get(key)?;
+        field
+            .as_f64()
+            .or_else(|| field.as_str()?.trim().parse().ok())
+    })
+}
+
 /// The first number under any of `keys`. A key the response omits is skipped rather than
 /// ending the search, because the two apis spell the same field differently and only one of
 /// the spellings is ever present.

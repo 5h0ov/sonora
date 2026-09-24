@@ -15,9 +15,10 @@ use tokio::sync::RwLock;
 use tokio::time::Instant;
 
 use crate::deezer::{decrypt, wire};
+use crate::engine::Loudness;
 use crate::{
     Album, AlbumDetail, Artist, ArtistProfile, HomeFeed, MediaKind, MusicApi, Playlist,
-    PlaylistDetail, SavedArtist, Track, UserProfile, distinct_covers,
+    PlaylistDetail, SavedArtist, Track, UserProfile, distinct_covers, escape,
 };
 
 const GATEWAY: &str = "https://www.deezer.com/ajax/gw-light.php";
@@ -91,6 +92,18 @@ struct Inner {
     /// Artist portraits already looked up, so a search that ranks the same artists on
     /// every keystroke does not spend the quota on them again.
     portraits: Mutex<HashMap<String, String>>,
+}
+
+/// A track's audio as it starts to arrive, with the key that decrypts it and what the gateway
+/// said about its length and loudness.
+pub struct Opened {
+    pub response: reqwest::Response,
+    pub key: decrypt::Secret,
+    pub duration: Option<Duration>,
+    /// The gateway's `GAIN`. Despite the name it is the track's integrated loudness rather than
+    /// an adjustment, and it lands within about a decibel of Apple's LUFS for the same
+    /// recording.
+    pub loudness: Option<Loudness>,
 }
 
 impl DeezerClient {
@@ -201,7 +214,9 @@ impl DeezerClient {
             .map(|at| at.subsec_nanos())
             .unwrap_or(0);
         let url = format!(
-            "{GATEWAY}?method={method}&input=3&api_version=1.0&api_token={api_token}&cid={cid}"
+            "{GATEWAY}?method={}&input=3&api_version=1.0&api_token={}&cid={cid}",
+            escape::component(method),
+            escape::component(api_token)
         );
         let sid = self.inner.session.read().await.sid.clone();
         let text = self
@@ -354,11 +369,8 @@ impl DeezerClient {
     }
 
     /// Opens the audio of a track: track token, then a stream url from `get_url`, then the
-    /// GET itself. Answers the response, the key that decrypts it, and the track's length.
-    pub async fn open_stream(
-        &self,
-        track_id: &str,
-    ) -> Result<(reqwest::Response, decrypt::Secret, Option<Duration>)> {
+    /// GET itself.
+    pub async fn open_stream(&self, track_id: &str) -> Result<Opened> {
         let data = self.track_data(track_id).await?;
         let effective_id = wire::id(&data["SNG_ID"])
             .with_context(|| format!("the deezer track {track_id} names no id"))?;
@@ -366,6 +378,12 @@ impl DeezerClient {
             .filter(|token| !token.is_empty())
             .with_context(|| format!("the deezer track {track_id} is not playable"))?;
         let duration = wire::number(&data, &["DURATION"]).map(Duration::from_secs);
+        let loudness = wire::decimal(&data, &["GAIN"])
+            .filter(|lufs| (-70.0..0.0).contains(lufs))
+            .map(|lufs| Loudness {
+                lufs: lufs as f32,
+                peak: None,
+            });
 
         let license = self.inner.session.read().await.license_token.clone();
         let formats: &[&str] = match effective_id.starts_with('-') {
@@ -388,7 +406,12 @@ impl DeezerClient {
                         .context("the deezer cdn refused the stream")?;
                     let secret = self.inner.secret.get().copied().unwrap_or_default();
                     let key = decrypt::track_key(&effective_id, &secret);
-                    return Ok((response, key, duration));
+                    return Ok(Opened {
+                        response,
+                        key,
+                        duration,
+                        loudness,
+                    });
                 }
                 Ok(None) => last = anyhow::anyhow!("format {format} is not licensed"),
                 Err(error) => last = error,
@@ -436,7 +459,10 @@ impl MusicApi for DeezerClient {
             MediaKind::Artist => "artist",
             MediaKind::Playlist => "playlist",
         };
-        Some(format!("https://www.deezer.com/{kind}/{id}"))
+        Some(format!(
+            "https://www.deezer.com/{kind}/{}",
+            escape::component(id)
+        ))
     }
 
     async fn profile(&self) -> Result<UserProfile> {
@@ -448,9 +474,10 @@ impl MusicApi for DeezerClient {
     }
 
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
-        let detail_path = format!("/artist/{artist_id}");
-        let top_path = format!("/artist/{artist_id}/top?limit=20");
-        let albums_path = format!("/artist/{artist_id}/albums?limit=50");
+        let artist = escape::component(artist_id);
+        let detail_path = format!("/artist/{artist}");
+        let top_path = format!("/artist/{artist}/top?limit=20");
+        let albums_path = format!("/artist/{artist}/albums?limit=50");
         let (detail, top, albums) = tokio::join!(
             self.public(&detail_path),
             self.public(&top_path),
@@ -485,7 +512,7 @@ impl MusicApi for DeezerClient {
 
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {
         let detail = self
-            .public(&format!("/artist/{artist_id}"))
+            .public(&format!("/artist/{}", escape::component(artist_id)))
             .await
             .context("cannot load the artist")?;
         Ok(ArtistProfile {
@@ -519,7 +546,10 @@ impl MusicApi for DeezerClient {
             }
         }
         for id in missing {
-            let Ok(detail) = self.public(&format!("/artist/{id}")).await else {
+            let Ok(detail) = self
+                .public(&format!("/artist/{}", escape::component(&id)))
+                .await
+            else {
                 continue;
             };
             let Some(cover) = detail
@@ -675,7 +705,7 @@ impl MusicApi for DeezerClient {
 
     async fn album(&self, album_id: &str) -> Result<AlbumDetail> {
         let detail = self
-            .public(&format!("/album/{album_id}"))
+            .public(&format!("/album/{}", escape::component(album_id)))
             .await
             .with_context(|| format!("cannot load the album {album_id}"))?;
         let tracks = detail
@@ -760,7 +790,7 @@ impl MusicApi for DeezerClient {
 
     async fn search(&self, query: &str) -> Result<Vec<Track>> {
         let page = self
-            .public(&format!("/search?q={}&limit=50", urlencoded(query)))
+            .public(&format!("/search?q={}&limit=50", escape::component(query)))
             .await
             .context("cannot search deezer")?;
         Ok(wire::track_list(&page))
@@ -768,7 +798,10 @@ impl MusicApi for DeezerClient {
 
     async fn search_albums(&self, query: &str) -> Result<Vec<Album>> {
         let page = self
-            .public(&format!("/search/album?q={}&limit=30", urlencoded(query)))
+            .public(&format!(
+                "/search/album?q={}&limit=30",
+                escape::component(query)
+            ))
             .await
             .context("cannot search deezer albums")?;
         Ok(page
@@ -785,7 +818,7 @@ impl MusicApi for DeezerClient {
         let page = self
             .public(&format!(
                 "/search/playlist?q={}&limit=30",
-                urlencoded(query)
+                escape::component(query)
             ))
             .await
             .context("cannot search deezer playlists")?;
@@ -809,18 +842,4 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-/// Minimal percent-encoding for a search query, without growing the dependency tree.
-fn urlencoded(query: &str) -> String {
-    let mut encoded = String::with_capacity(query.len());
-    for byte in query.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
-                encoded.push(byte as char);
-            }
-            _ => encoded.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    encoded
 }

@@ -25,9 +25,12 @@ async fn main() -> Result<()> {
     let id = track.id.clone().context("the track has no id")?;
     println!("search: {} — {} ({id})", track.name, track.artists);
 
-    let (response, key, duration) = client.open_stream(&id).await?;
-    println!("stream: length {duration:?}");
-    let stream = Stream::open(response, Striped::new(&key)).await?;
+    let opened = client.open_stream(&id).await?;
+    println!(
+        "stream: length {:?}, loudness {:?}",
+        opened.duration, opened.loudness
+    );
+    let stream = Stream::open(opened.response, Striped::new(&opened.key)).await?;
 
     let mut head = [0u8; 8192];
     stream

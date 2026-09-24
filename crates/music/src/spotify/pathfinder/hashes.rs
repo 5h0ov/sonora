@@ -11,6 +11,8 @@ use http::{Method, Request, header};
 use librespot_core::Session;
 use serde::{Deserialize, Serialize};
 
+use crate::escape;
+
 const WORKER: &str = "https://billowing-resonance-da83.johnwatson.workers.dev/hashes";
 const MAX_AGE: Duration = Duration::from_secs(24 * 60 * 60);
 const FILE: &str = "pathfinder.json";
@@ -116,7 +118,7 @@ async fn refreshed(session: &Session, stale: Option<&str>) -> Result<HashMap<Str
 
 async fn download(session: &Session, stale: Option<&str>) -> Result<HashMap<String, String>> {
     let uri = match stale {
-        Some(stale) => format!("{WORKER}?stale={stale}"),
+        Some(stale) => format!("{WORKER}?stale={}", escape::component(stale)),
         None => WORKER.to_owned(),
     };
     let request = Request::builder()

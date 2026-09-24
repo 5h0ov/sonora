@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 use super::query;
-use crate::{LibraryItem, LibraryItemKind, LibraryOrder, LibraryPinResult};
+use crate::{PinOutcome, PinTarget, PinTargetKind};
 
 const PAGE_SIZE: usize = 100;
 
@@ -34,13 +34,8 @@ struct Paging {
     offset: usize,
 }
 
-pub(crate) async fn library(session: &Session, order: LibraryOrder) -> Result<Vec<LibraryItem>> {
-    let order = match order {
-        LibraryOrder::Recents => "Recents",
-        LibraryOrder::RecentlyAdded => "Recently Added",
-        LibraryOrder::Alphabetical => "Alphabetical",
-        LibraryOrder::Creator => "Creator",
-    };
+/// Every row of Your Library, most recently played first, each saying whether it is pinned.
+pub(crate) async fn library(session: &Session) -> Result<Vec<PinTarget>> {
     let mut result = Vec::new();
     let mut seen = HashSet::new();
     let mut offset = 0;
@@ -49,7 +44,7 @@ pub(crate) async fn library(session: &Session, order: LibraryOrder) -> Result<Ve
             session,
             "libraryV3",
             json!({
-                "filters": [], "order": order, "textFilter": "", "features": ["LIKED_SONGS"],
+                "filters": [], "order": "Recents", "textFilter": "", "features": ["LIKED_SONGS"],
                 "limit": PAGE_SIZE, "offset": offset, "flatten": false, "expandedFolders": [],
                 "folderUri": null, "includeFoldersWhenFlattening": true
             }),
@@ -77,11 +72,7 @@ pub(crate) async fn library(session: &Session, order: LibraryOrder) -> Result<Ve
     Ok(result)
 }
 
-pub(crate) async fn set_library_item_pinned(
-    session: &Session,
-    uri: &str,
-    pinned: bool,
-) -> Result<LibraryPinResult> {
+pub(crate) async fn set_pinned(session: &Session, uri: &str, pinned: bool) -> Result<PinOutcome> {
     let operation = if pinned {
         "pinLibraryItem"
     } else {
@@ -91,17 +82,17 @@ pub(crate) async fn set_library_item_pinned(
     if pinned {
         pin_result(&data)
     } else {
-        Ok(LibraryPinResult::Updated)
+        Ok(PinOutcome::Updated)
     }
 }
 
-fn pin_result(data: &Value) -> Result<LibraryPinResult> {
+fn pin_result(data: &Value) -> Result<PinOutcome> {
     match data
         .pointer("/pinItemInLibrary/pinResult")
         .and_then(Value::as_str)
     {
-        Some("SUCCESSFUL") => Ok(LibraryPinResult::Updated),
-        Some("FAILED_ITEM_LIMIT_REACHED") => Ok(LibraryPinResult::LimitReached),
+        Some("SUCCESSFUL") => Ok(PinOutcome::Updated),
+        Some("FAILED_ITEM_LIMIT_REACHED") => Ok(PinOutcome::LimitReached),
         Some(reason) => anyhow::bail!("Spotify rejected library pin: {reason}"),
         None => anyhow::bail!("Spotify did not confirm the library pin"),
     }
@@ -130,13 +121,13 @@ fn cover(value: &Value, pointer: &str) -> Option<String> {
         .map(|(_, url)| url.to_owned())
 }
 
-fn item(row: &Value) -> Option<LibraryItem> {
+fn item(row: &Value) -> Option<PinTarget> {
     let data = row.pointer("/item/data")?;
     let typename = string(data, "/__typename")?;
     let uri = string(data, "/uri").or_else(|| string(row, "/item/_uri"))?;
     let (kind, name, subtitle, artwork) = match typename {
         "Playlist" => (
-            LibraryItemKind::Playlist,
+            PinTargetKind::Playlist,
             string(data, "/name")?,
             string(data, "/ownerV2/data/name")
                 .unwrap_or_default()
@@ -144,7 +135,7 @@ fn item(row: &Value) -> Option<LibraryItem> {
             cover(data, "/images/items/0/sources"),
         ),
         "Album" => (
-            LibraryItemKind::Album,
+            PinTargetKind::Album,
             string(data, "/name")?,
             data.pointer("/artists/items")?
                 .as_array()?
@@ -155,19 +146,19 @@ fn item(row: &Value) -> Option<LibraryItem> {
             cover(data, "/coverArt/sources"),
         ),
         "Artist" => (
-            LibraryItemKind::Artist,
+            PinTargetKind::Artist,
             string(data, "/profile/name")?,
             String::new(),
             cover(data, "/visuals/avatarImage/sources"),
         ),
         "PseudoPlaylist" if uri == "spotify:collection:tracks" => (
-            LibraryItemKind::LikedSongs,
+            PinTargetKind::LikedSongs,
             string(data, "/name")?,
             String::new(),
             cover(data, "/image/sources"),
         ),
         "Audiobook" => (
-            LibraryItemKind::Audiobook,
+            PinTargetKind::Audiobook,
             string(data, "/name")?,
             data.get("authorsV2")
                 .and_then(Value::as_array)
@@ -179,7 +170,7 @@ fn item(row: &Value) -> Option<LibraryItem> {
             cover(data, "/coverArt/sources"),
         ),
         "Podcast" => (
-            LibraryItemKind::Show,
+            PinTargetKind::Show,
             string(data, "/name")?,
             string(data, "/publisher/name")
                 .unwrap_or_default()
@@ -187,14 +178,14 @@ fn item(row: &Value) -> Option<LibraryItem> {
             cover(data, "/coverArt/sources"),
         ),
         "Folder" => (
-            LibraryItemKind::Folder,
+            PinTargetKind::Folder,
             string(data, "/name")?,
             String::new(),
             None,
         ),
         _ => return None,
     };
-    Some(LibraryItem {
+    Some(PinTarget {
         uri: uri.to_owned(),
         name: name.to_owned(),
         subtitle,
@@ -212,14 +203,14 @@ mod tests {
     fn pin_response_requires_confirmation_and_reports_the_server_limit() {
         assert_eq!(
             pin_result(&json!({"pinItemInLibrary":{"pinResult":"SUCCESSFUL"}})).unwrap(),
-            LibraryPinResult::Updated
+            PinOutcome::Updated
         );
         assert_eq!(
             pin_result(
                 &json!({"pinItemInLibrary":{"pinResult":"FAILED_ITEM_LIMIT_REACHED","pinLimit":4}})
             )
             .unwrap(),
-            LibraryPinResult::LimitReached
+            PinOutcome::LimitReached
         );
         for reason in [
             "FAILED_ITEM_IN_FOLDER",
@@ -248,7 +239,7 @@ mod tests {
         let row = item(&json!({"pinned":true,"item":{"data":{"__typename":"PseudoPlaylist",
             "uri":"spotify:collection:tracks","name":"Liked Songs","image":{"sources":[
                 {"width":640,"url":"https://example.com/large"},{"width":64,"url":"https://example.com/small"}]}}}})).unwrap();
-        assert_eq!(row.kind, LibraryItemKind::LikedSongs);
+        assert_eq!(row.kind, PinTargetKind::LikedSongs);
         assert!(row.pinned);
         assert_eq!(row.cover.as_deref(), Some("https://example.com/small"));
     }
@@ -257,8 +248,8 @@ mod tests {
     fn artists_and_books_keep_their_actual_types() {
         let artist = item(&json!({"item":{"_uri":"spotify:artist:a","data":{"__typename":"Artist","profile":{"name":"Artist"}}}})).unwrap();
         let book = item(&json!({"item":{"_uri":"spotify:show:b","data":{"__typename":"Audiobook","name":"Book","authorsV2":[{"name":"Author"}]}}})).unwrap();
-        assert_eq!(artist.kind, LibraryItemKind::Artist);
-        assert_eq!(book.kind, LibraryItemKind::Audiobook);
+        assert_eq!(artist.kind, PinTargetKind::Artist);
+        assert_eq!(book.kind, PinTargetKind::Audiobook);
         assert_eq!(book.subtitle, "Author");
     }
 }

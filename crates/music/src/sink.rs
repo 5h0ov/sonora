@@ -23,6 +23,8 @@ const QUEUED_CHUNKS: usize = 26;
 const DRAIN_POLL: Duration = Duration::from_millis(10);
 /// How often a write asks the system whether the default device changed.
 const DEVICE_POLL: Duration = Duration::from_millis(500);
+/// How often a watch looks for an output device to come back once none could be opened.
+const WATCH_POLL: Duration = Duration::from_secs(1);
 
 /// What the cue does with the next write. It rides in an `AtomicU8`, so it converts at that
 /// boundary and stays a type everywhere else.
@@ -321,6 +323,26 @@ impl Paced {
         self.changed.send(()).ok();
         Gone
     }
+}
+
+/// Waits for an output device to come back and then tells `notify`, which the engine takes the
+/// way it takes the default device changing: it reopens the output and reloads where it was.
+/// This is what an engine that could not open a device at all waits on. A machine whose only
+/// device has gone, a Bluetooth headset that dropped its link, has nothing to reopen on and
+/// nothing else asks the system again, so without the watch playback stays silent until the app
+/// restarts. The watch ends when the engine listening on `notify` is gone.
+pub fn watch_for_output(notify: UnboundedSender<()>) {
+    std::thread::spawn(move || {
+        while !notify.is_closed() {
+            std::thread::sleep(WATCH_POLL);
+            if !crate::audio::available() {
+                continue;
+            }
+            log::info!("sink: an output device is available again, reopening");
+            notify.send(()).ok();
+            return;
+        }
+    });
 }
 
 /// A packet of interleaved samples at one rate, ready for the queue.

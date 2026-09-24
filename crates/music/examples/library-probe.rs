@@ -13,9 +13,9 @@ async fn main() -> Result<()> {
         .context("no cached Spotify session")?;
     let client = LibrespotClient::new(session);
     let items = client
-        .library_items(music::LibraryOrder::Recents)
+        .pin_targets()
         .await?
-        .context("provider has no mixed library")?;
+        .context("provider keeps no pins")?;
     println!(
         "library items={}, pinned={}",
         items.len(),

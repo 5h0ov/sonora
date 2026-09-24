@@ -1,8 +1,8 @@
 //! Playback for files on disk: what [`crate::engine`] needs that is local's own.
 //!
-//! A track id names a file, so a load only reads its header for the length, and a decoder opens
-//! over the file itself. The threads, the queue, the preload and the gapless join are the
-//! engine's.
+//! A track id names a file, so a load only reads its header for the length and its tags for the
+//! ReplayGain, and a decoder opens over the file itself. The threads, the queue, the preload, the
+//! gapless join and the loudness gain are the engine's.
 
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
@@ -12,14 +12,16 @@ use anyhow::{Context as _, Result, anyhow};
 use async_trait::async_trait;
 use rodio::Source as _;
 
-use super::wire;
-use crate::engine::{self, Fetch};
+use super::{tags, wire};
+use crate::engine::{self, Fetch, Loudness};
 use crate::{PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
 
-/// A file that opened and decodes, and how long the decoder says it is.
+/// A file that opened and decodes, how long the decoder says it is, and the ReplayGain its tags
+/// carry.
 #[derive(Clone)]
 pub struct Loaded {
     length: Option<Duration>,
+    loudness: Option<Loudness>,
 }
 
 #[derive(Default)]
@@ -42,18 +44,25 @@ impl Fetch for Local {
         "local"
     }
 
-    /// Opens the file off the engine's runtime to check it decodes and to learn its length.
+    /// Opens the file off the engine's runtime to check it decodes, and reads its length and
+    /// ReplayGain while it is there.
     async fn load(&self, id: &str) -> Result<Loaded> {
         let id = id.to_owned();
-        let length = tokio::task::spawn_blocking(move || decode(&id))
-            .await
-            .context("cannot probe the local file")??
-            .total_duration();
-        Ok(Loaded { length })
+        tokio::task::spawn_blocking(move || {
+            let length = decode(&id)?.total_duration();
+            let loudness = wire::path_from_track_id(&id).and_then(tags::loudness);
+            Ok(Loaded { length, loudness })
+        })
+        .await
+        .context("cannot probe the local file")?
     }
 
     fn length(&self, loaded: &Loaded) -> Option<Duration> {
         loaded.length
+    }
+
+    fn loudness(&self, loaded: &Loaded) -> Option<Loudness> {
+        loaded.loudness
     }
 
     fn open(&self, id: &str, _loaded: &Loaded, at: Duration) -> Option<Self::Source> {

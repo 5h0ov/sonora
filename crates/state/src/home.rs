@@ -1,9 +1,10 @@
 use std::collections::HashSet;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui::{App, Context, Entity, Task};
-use music::{GenreItem, GenreSection, HomeFeed, Track};
+use music::{GenreItem, GenreSection, HomeFeed, MusicApi, Track};
 
 use crate::{Io, Library, LibraryPart, LibraryState, Network, Session, SessionEvent, Shelf, join};
 
@@ -60,21 +61,17 @@ impl Home {
         let picks_seed = fastrand::u64(..);
 
         cx.subscribe(&session, |this, _, event, cx| match event {
-            SessionEvent::SignedIn => this.feed(cx),
+            SessionEvent::SignedIn => this.reload(cx),
             SessionEvent::SignedOut => {
-                this.task = None;
-                this.naming = None;
-                this.recent = Rc::new(Vec::new());
-                this.picks = Rc::new(Vec::new());
-                this.quick_picks = Rc::new(Vec::new());
-                this.sections = Rc::new(Vec::new());
-                this.feeding = false;
-                this.error = None;
-                this.failures = 0;
-                this.pending = None;
+                this.clear();
                 cx.notify();
             }
-            SessionEvent::Reconnected | SessionEvent::LocalChanged => {}
+            SessionEvent::LocalChanged => {
+                if this.is_local(cx) {
+                    this.reload(cx);
+                }
+            }
+            SessionEvent::Reconnected => {}
         })
         .detach();
 
@@ -126,11 +123,52 @@ impl Home {
         self.feed(cx);
     }
 
+    fn client(&self, cx: &App) -> Option<Arc<dyn MusicApi>> {
+        let session = self.session.read(cx);
+        if session.guest() && session.local_client().is_some() {
+            session.local_client()
+        } else {
+            session.client()
+        }
+    }
+
+    fn shelf(&self, cx: &App) -> Shelf {
+        let session = self.session.read(cx);
+        if session.guest() {
+            Shelf::Local
+        } else {
+            Shelf::Streaming
+        }
+    }
+
+    pub fn is_local(&self, cx: &App) -> bool {
+        self.shelf(cx) == Shelf::Local
+    }
+
+    fn clear(&mut self) {
+        self.task = None;
+        self.naming = None;
+        self.recent = Rc::new(Vec::new());
+        self.picks = Rc::new(Vec::new());
+        self.quick_picks = Rc::new(Vec::new());
+        self.sections = Rc::new(Vec::new());
+        self.feeding = false;
+        self.error = None;
+        self.failures = 0;
+        self.pending = None;
+    }
+
+    pub fn reload(&mut self, cx: &mut Context<Self>) {
+        self.clear();
+        self.feed(cx);
+        cx.notify();
+    }
+
     pub fn feed(&mut self, cx: &mut Context<Self>) {
         if self.feeding || !self.sections.is_empty() {
             return;
         }
-        let Some(client) = self.session.read(cx).client() else {
+        let Some(client) = self.client(cx) else {
             return;
         };
 
@@ -295,7 +333,7 @@ impl Home {
         {
             return;
         }
-        let Some(client) = self.session.read(cx).client() else {
+        let Some(client) = self.client(cx) else {
             return;
         };
 
@@ -326,11 +364,9 @@ impl Home {
     /// Whether Quick picks are still on their way: the feed is in flight and nothing of it has
     /// landed yet, or the library the picks would otherwise be mixed from is.
     pub fn is_loading(&self, cx: &App) -> bool {
+        let shelf = self.shelf(cx);
         (self.feeding && self.quick_picks.is_empty())
-            || self
-                .library
-                .read(cx)
-                .loading(Shelf::Streaming, LibraryPart::Tracks)
+            || self.library.read(cx).loading(shelf, LibraryPart::Tracks)
     }
 
     /// Mixes picks from the library, but only in place of a provider's that never came: not
@@ -340,14 +376,12 @@ impl Home {
         if self.feeding || !self.picks.is_empty() {
             return;
         }
-        let ready = matches!(
-            self.library.read(cx).state(Shelf::Streaming),
-            LibraryState::Ready(_)
-        );
+        let shelf = self.shelf(cx);
+        let ready = matches!(self.library.read(cx).state(shelf), LibraryState::Ready(_));
         if !ready {
             return;
         }
-        self.picks = picks(&self.library, self.picks_seed, cx);
+        self.picks = picks(&self.library, shelf, self.picks_seed, cx);
         self.merge();
         cx.notify();
     }
@@ -379,8 +413,8 @@ fn pruned(sections: &[GenreSection]) -> Vec<GenreSection> {
         .collect()
 }
 
-fn picks(library: &Entity<Library>, seed: u64, cx: &App) -> Rc<Vec<Track>> {
-    let tracks = library.read(cx).state(Shelf::Streaming).tracks();
+fn picks(library: &Entity<Library>, shelf: Shelf, seed: u64, cx: &App) -> Rc<Vec<Track>> {
+    let tracks = library.read(cx).state(shelf).tracks();
     Rc::new(mixed_tracks(tracks, seed))
 }
 

@@ -3,12 +3,13 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, bail};
 use async_trait::async_trait;
 use md5::{Digest, Md5};
-use percent_encoding::{NON_ALPHANUMERIC, percent_decode_str, utf8_percent_encode};
+use percent_encoding::percent_decode_str;
 use serde::Deserialize;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
 use super::{Account, Link, Play, Secret, Service};
+use crate::escape;
 
 /// The loopback address the browser hands the token back on.
 const PORT: u16 = 8990;
@@ -173,8 +174,8 @@ struct Granted {
 fn authorize_url(authorize: &str, key: &str) -> String {
     format!(
         "{authorize}?api_key={}&cb={}",
-        escaped(key),
-        escaped(&format!("http://127.0.0.1:{PORT}{PATH}"))
+        escape::component(key),
+        escape::component(&format!("http://127.0.0.1:{PORT}{PATH}"))
     )
 }
 
@@ -234,10 +235,6 @@ fn signature(form: &[(String, String)], secret: &str) -> String {
     }
     base.push_str(secret);
     format!("{:x}", Md5::digest(base.as_bytes()))
-}
-
-fn escaped(value: &str) -> String {
-    utf8_percent_encode(value, NON_ALPHANUMERIC).to_string()
 }
 
 fn parameter(request: &str, name: &str) -> Option<String> {

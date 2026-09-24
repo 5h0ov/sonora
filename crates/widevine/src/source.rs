@@ -1,7 +1,9 @@
 //! Where the CDM comes from.
 //!
-//! In the order Kodi's InputStream Helper uses: a copy the user pointed at, a copy a browser on
-//! the machine already has, then the one Sonora fetched from Google into its own store.
+//! A copy the user pointed at comes first, then the one Sonora fetched from Google into its own
+//! store, then a copy a browser on the machine already has. The store only holds a module the
+//! user accepted Google's terms for, so it outranks a browser's copy, which can be one the
+//! host cannot open.
 //!
 //! Nothing here lists a directory. Every candidate is an exact path this module builds and then
 //! stats, because a process that walks folders looking for libraries is what an antivirus
@@ -109,6 +111,17 @@ pub(crate) fn remember(found: Found) -> Found {
     settled().get_or_insert(found).clone()
 }
 
+/// Settles on a module the user just installed, in place of a browser's copy the process
+/// settled on before. A module named by `SONORA_WIDEVINE_CDM` or an earlier one from the store
+/// stays settled, as [`remember`] keeps it.
+pub(crate) fn prefer(found: Found) -> Found {
+    let mut settled = settled();
+    match settled.as_ref() {
+        Some(kept) if kept.origin != Origin::Installed => kept.clone(),
+        _ => settled.insert(found).clone(),
+    }
+}
+
 /// Removes every module Sonora fetched from Google, store folder and all, and forgets the one
 /// the process settled on so the next search starts over. A CDM already open stays open until
 /// the process ends: the file is unlinked, not unloaded.
@@ -125,7 +138,7 @@ pub fn uninstall() -> Result<()> {
     Ok(())
 }
 
-/// The environment, then a browser's copy, then the store.
+/// The environment, then the store, then a browser's copy.
 fn search() -> Option<Found> {
     if let Some(path) = configured() {
         return Some(Found {
@@ -133,15 +146,15 @@ fn search() -> Option<Found> {
             origin: Origin::Configured,
         });
     }
-    if let Some(path) = installed() {
+    if let Some(path) = stored() {
         return Some(Found {
             path,
-            origin: Origin::Installed,
+            origin: Origin::Fetched,
         });
     }
-    stored().map(|path| Found {
+    installed().map(|path| Found {
         path,
-        origin: Origin::Fetched,
+        origin: Origin::Installed,
     })
 }
 

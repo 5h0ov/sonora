@@ -52,10 +52,6 @@ widestring.workspace = true
 windows.workspace = true
 windows-sys.workspace = true
 
-[dev-dependencies]
-# only the apple-login example, which puts up a sign-in window without the app around it
-webview.workspace = true
-
 [build-dependencies]
 embed.workspace = true
 

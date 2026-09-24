@@ -39,7 +39,7 @@ Source: "..\..\THIRD-PARTY.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"
-Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon; Check: not SilentUpgrade
 
 ; Lists Sonora in "Open With" for the file types it plays, without becoming the default
 ; handler for any of them (that's what OpenWithProgids under the extension key does, as
@@ -75,4 +75,11 @@ Filename: "{app}\{#AppExeName}"; Flags: nowait runasoriginaluser; Check: Relaunc
 function RelaunchRequested: Boolean;
 begin
   Result := ExpandConstant('{param:relaunch|0}') = '1';
+end;
+
+// A silent run over an existing install is an update from the app or a package manager. It
+// leaves the desktop alone, so a shortcut the user deleted or replaced stays that way.
+function SilentUpgrade: Boolean;
+begin
+  Result := WizardSilent and (WizardForm.PrevAppDir <> '');
 end;

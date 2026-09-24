@@ -3,8 +3,8 @@
 //! Nothing here is about one service. A provider that streams CENC audio needs the same five
 //! things, and they are all this crate does:
 //!
-//! - [`find`] settles which CDM this process uses: one the user named, one a browser on the
-//!   machine has, or one in Sonora's own store. [`offer`] and [`Offer::install`] put one into
+//! - [`find`] settles which CDM this process uses: one the user named, one in Sonora's own
+//!   store, or one a browser on the machine has. [`offer`] and [`Offer::install`] put one into
 //!   that store from Google's component update service, the way Chrome and Kodi get theirs,
 //!   with Google's terms shown in between. Google publishes nothing anyone may redistribute,
 //!   so no release carries the module; every copy is fetched on the machine that uses it.

@@ -26,16 +26,42 @@ use rodio::Source as _;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel};
 
 use crate::audio::{Chain, Volume};
-use crate::sink::{Cue, Paced, packet};
+use crate::sink::{Cue, Paced, packet, watch_for_output};
 use crate::spectrum::Spectrum;
 use crate::{PlaybackConfig, PlaybackEvent, PlaybackEvents, Player};
 
 /// How many frames the decoder hands over at a time. Small enough that a skip is heard at once,
 /// large enough that the queue is not rebuilt for every few samples.
 const CHUNK: usize = 4096;
-/// The most normalisation may raise a track. At unity a quiet track stays as it is and only a
-/// loud one is turned down, so normalising can never clip.
-const NORMAL_CAP: f32 = 1.0;
+/// The level normalisation brings every track to, in LUFS. Spotify and YouTube both play at
+/// about this level, so a track sounds as loud here whichever service it came from.
+const TARGET_LUFS: f32 = -14.0;
+/// The level ReplayGain 2.0 measures its gain against, in LUFS.
+const REPLAYGAIN_LUFS: f32 = -18.0;
+/// The most normalisation may raise a track, about 12 dB, whatever headroom its peak claims.
+const BOOST_CAP: f32 = 4.0;
+
+/// How loud a track is, as its source measured it. The engine compares this with
+/// `TARGET_LUFS` to decide the track's gain.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Loudness {
+    /// Integrated loudness in LUFS.
+    pub lufs: f32,
+    /// The peak as a fraction of full scale, sample or true peak. Without one a quiet track is
+    /// never raised, since nothing says how far it can go before it clips.
+    pub peak: Option<f32>,
+}
+
+impl Loudness {
+    /// Reads a ReplayGain gain in dB and its peak, the form that file tags and Subsonic servers
+    /// carry.
+    pub fn replay_gain(gain_db: f32, peak: Option<f32>) -> Self {
+        Self {
+            lufs: REPLAYGAIN_LUFS - gain_db,
+            peak: peak.filter(|peak| *peak > 0.0),
+        }
+    }
+}
 
 /// What the engine needs from a provider, and all it needs.
 ///
@@ -63,9 +89,9 @@ pub trait Fetch: Send + Sync + 'static {
         None
     }
 
-    /// How many dB the track sits above the provider's reference level, when the provider
-    /// publishes it. The engine turns this into the track's gain when normalisation is on.
-    fn loudness(&self, _loaded: &Self::Loaded) -> Option<f32> {
+    /// How loud the track is, when its source measured it. The engine turns this into the
+    /// track's gain when normalisation is on.
+    fn loudness(&self, _loaded: &Self::Loaded) -> Option<Loudness> {
         None
     }
 
@@ -684,9 +710,14 @@ fn audio_loop<F: Fetch>(
     interval: Duration,
     normalise: bool,
 ) {
-    let mut paced = match Paced::open(cue.clone(), chain, changed) {
+    let mut paced = match Paced::open(cue.clone(), chain, changed.clone()) {
         Ok(paced) => paced,
-        Err(error) => return log::error!("playback: cannot open audio output: {error:#}"),
+        Err(error) => {
+            // Nothing can be decoded without an output, so this thread is done. The engine is
+            // told once a device is back, and the one that replaces it opens on that.
+            log::error!("playback: cannot open audio output: {error:#}");
+            return watch_for_output(changed);
+        }
     };
 
     let mut current: Option<Playing<F>> = None;
@@ -909,28 +940,42 @@ fn audio_loop<F: Fetch>(
 }
 
 /// The gain a track plays at: unity with normalisation off or no loudness known, and otherwise
-/// whatever brings it down to the reference level, never above `NORMAL_CAP`.
-fn normalisation(enabled: bool, loudness_db: Option<f32>) -> f32 {
-    match (enabled, loudness_db) {
-        (true, Some(db)) => 10f32.powf(-db / 20.0).min(NORMAL_CAP),
-        _ => 1.0,
-    }
+/// whatever brings it to `TARGET_LUFS`. A loud track is always turned down. A quiet one is
+/// raised only as far as its peak leaves room for, so normalising never clips a track that
+/// did not clip already.
+fn normalisation(enabled: bool, loudness: Option<Loudness>) -> f32 {
+    let Some(loudness) = loudness.filter(|_| enabled) else {
+        return 1.0;
+    };
+    let wanted = 10f32.powf((TARGET_LUFS - loudness.lufs) / 20.0);
+    let headroom = loudness
+        .peak
+        .map_or(1.0, |peak| (1.0 / peak).clamp(1.0, BOOST_CAP));
+    wanted.min(headroom)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn measured(lufs: f32, peak: Option<f32>) -> Option<Loudness> {
+        Some(Loudness { lufs, peak })
+    }
+
     #[test]
     fn normalisation_attenuates_loud_tracks() {
-        let factor = normalisation(true, Some(6.0));
+        let factor = normalisation(true, measured(TARGET_LUFS + 6.0, None));
         assert!(factor < 0.51 && factor > 0.49);
     }
 
     #[test]
-    fn normalisation_never_boosts() {
-        assert_eq!(normalisation(true, Some(-3.0)), NORMAL_CAP);
-        assert_eq!(normalisation(false, Some(6.0)), 1.0);
+    fn normalisation_boosts_only_into_headroom() {
+        assert_eq!(normalisation(true, measured(TARGET_LUFS - 3.0, None)), 1.0);
+        assert_eq!(
+            normalisation(true, measured(TARGET_LUFS - 12.0, Some(0.5))),
+            2.0
+        );
+        assert_eq!(normalisation(false, measured(TARGET_LUFS + 6.0, None)), 1.0);
         assert_eq!(normalisation(true, None), 1.0);
     }
 

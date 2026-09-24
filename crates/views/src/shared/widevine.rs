@@ -71,14 +71,13 @@ impl Render for WidevinePrompt {
 
         let theme = *cx.theme();
         let small = theme.text(Text::Small);
+        let wanted = match self.drm.read(cx).replacing() {
+            true => t!("widevine-prompt-replace"),
+            false => t!("widevine-prompt-wanted"),
+        };
         let (detail, note, license, action) = match &state {
-            CdmState::Wanted => (t!("widevine-prompt-wanted"), None, None, true),
-            CdmState::Offering => (
-                t!("widevine-prompt-wanted"),
-                Some(t!("widevine-prompt-downloading")),
-                None,
-                false,
-            ),
+            CdmState::Wanted => (wanted, None, None, true),
+            CdmState::Offering => (wanted, Some(t!("widevine-prompt-downloading")), None, false),
             CdmState::Offered(terms) => (
                 t!("widevine-prompt-terms", version = terms.version.as_str()),
                 None,

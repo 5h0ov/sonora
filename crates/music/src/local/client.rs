@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::RwLock;
 
@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use storage::Database;
 
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, MediaKind, MusicApi, Playlist, PlaylistDetail,
-    SavedArtist, Track, TrackTags, UserProfile, distinct_covers,
+    Album, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed, MediaKind,
+    MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, TrackTags, UserProfile,
+    distinct_covers,
 };
 
 use super::index::Index;
@@ -452,5 +453,242 @@ impl MusicApi for LocalClient {
         self.store.set_starred(Starred::Tracks, track_id, false)?;
         std::fs::remove_file(path).with_context(|| format!("cannot delete {}", path.display()))?;
         Ok(())
+    }
+
+    async fn home(&self) -> Result<HomeFeed> {
+        let (tracks, albums) = {
+            let scanned = self.scanned.read().unwrap();
+            (scanned.tracks.clone(), scanned.albums.clone())
+        };
+        if tracks.is_empty() && albums.is_empty() {
+            return Ok(HomeFeed::default());
+        }
+
+        let playable: Vec<Track> = tracks
+            .into_iter()
+            .filter(|t| t.playable && t.id.is_some())
+            .collect();
+
+        const PICKS_TARGET: usize = 30;
+        let total = PICKS_TARGET.min(playable.len());
+        let familiar_target = total / 2;
+
+        let starred_ids = self.store.starred(Starred::Tracks).unwrap_or_default();
+        let most_played_ids = self.store.most_played(PICKS_TARGET).unwrap_or_default();
+
+        let mut familiar_candidates = Vec::new();
+        let mut seen_ids = HashSet::new();
+
+        for (id, _) in &starred_ids {
+            if seen_ids.insert(id.clone()) {
+                familiar_candidates.push(id.clone());
+            }
+        }
+        for id in &most_played_ids {
+            if seen_ids.insert(id.clone()) {
+                familiar_candidates.push(id.clone());
+            }
+        }
+
+        let mut familiar_tracks: Vec<Track> = familiar_candidates
+            .into_iter()
+            .filter_map(|id| {
+                playable
+                    .iter()
+                    .find(|t| t.id.as_deref() == Some(&id))
+                    .cloned()
+            })
+            .collect();
+
+        if familiar_tracks.len() > familiar_target {
+            fastrand::shuffle(&mut familiar_tracks);
+            familiar_tracks.truncate(familiar_target);
+        }
+
+        let familiar_set: HashSet<&str> = familiar_tracks
+            .iter()
+            .filter_map(|t| t.id.as_deref())
+            .collect();
+
+        let mut random_pool: Vec<Track> = playable
+            .iter()
+            .filter(|t| t.id.as_deref().is_none_or(|id| !familiar_set.contains(id)))
+            .cloned()
+            .collect();
+        fastrand::shuffle(&mut random_pool);
+
+        let random_count = total.saturating_sub(familiar_tracks.len());
+        let random_tracks: Vec<Track> = random_pool.into_iter().take(random_count).collect();
+
+        let mut quick_tracks = familiar_tracks;
+        quick_tracks.extend(random_tracks);
+        fastrand::shuffle(&mut quick_tracks);
+
+        let mut sections = Vec::new();
+
+        let mut recent_albums = albums.clone();
+        recent_albums.sort_by_key(|album| std::cmp::Reverse(album.added_at.unwrap_or(i64::MIN)));
+        let recent_items: Vec<GenreItem> = recent_albums
+            .into_iter()
+            .take(15)
+            .map(GenreItem::Album)
+            .collect();
+        if !recent_items.is_empty() {
+            sections.push(GenreSection {
+                title: "home-recently-added".to_owned(),
+                items: recent_items,
+            });
+        }
+
+        let playlists = self.playlists().await.unwrap_or_default();
+        if !playlists.is_empty() {
+            sections.push(GenreSection {
+                title: "home-playlists".to_owned(),
+                items: playlists
+                    .into_iter()
+                    .take(15)
+                    .map(GenreItem::Playlist)
+                    .collect(),
+            });
+        }
+
+        let starred_albums = self.saved_albums().await.unwrap_or_default();
+        if !starred_albums.is_empty() {
+            sections.push(GenreSection {
+                title: "home-favorite-albums".to_owned(),
+                items: starred_albums
+                    .into_iter()
+                    .take(15)
+                    .map(GenreItem::Album)
+                    .collect(),
+            });
+        }
+
+        let mut artists = self.artists();
+        if !artists.is_empty() {
+            fastrand::shuffle(&mut artists);
+            sections.push(GenreSection {
+                title: "home-artists".to_owned(),
+                items: artists
+                    .into_iter()
+                    .take(15)
+                    .map(GenreItem::Artist)
+                    .collect(),
+            });
+        }
+
+        if albums.len() > 15 {
+            let mut explore_albums = albums.clone();
+            fastrand::shuffle(&mut explore_albums);
+            sections.push(GenreSection {
+                title: "home-collection-albums".to_owned(),
+                items: explore_albums
+                    .into_iter()
+                    .take(15)
+                    .map(GenreItem::Album)
+                    .collect(),
+            });
+        }
+
+        let listen_again = quick_tracks
+            .iter()
+            .take(10)
+            .cloned()
+            .map(GenreItem::Track)
+            .collect();
+
+        Ok(HomeFeed {
+            listen_again,
+            quick_picks: Some(quick_tracks),
+            sections,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::ArtistRef;
+
+    fn test_track(id: &str, name: &str, artists: &str, album: &str) -> Track {
+        Track {
+            id: Some(id.to_owned()),
+            name: name.to_owned(),
+            playable: true,
+            artists: artists.to_owned(),
+            artist_refs: vec![ArtistRef {
+                name: artists.to_owned(),
+                id: None,
+            }],
+            album: album.to_owned(),
+            album_id: None,
+            cover: None,
+            duration: Duration::from_secs(180),
+            added_at: None,
+            added_by: None,
+            playcount: None,
+            popularity: 50,
+            explicit: false,
+            track_number: 1,
+            disc_number: 1,
+            tags: Vec::new(),
+            languages: Vec::new(),
+            credits: Vec::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn home_feed_quick_picks_mixes_starred_played_and_random() {
+        let dir = std::env::temp_dir().join(format!("sonora-test-{}", fastrand::u64(..)));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = Database::at(dir.join("state.sqlite"));
+        let cache = storage::Cache::at(dir.join("cache.sqlite"));
+        let index = Index::new(cache);
+
+        let mut tracks = Vec::new();
+        for i in 0..20 {
+            tracks.push(test_track(
+                &format!("local:{i}"),
+                &format!("Track {i}"),
+                &format!("Artist {}", i % 5),
+                "Album",
+            ));
+        }
+
+        let scanned = Scanned {
+            tracks,
+            albums: vec![],
+            portraits: HashMap::new(),
+        };
+
+        let client = LocalClient::new(scanned, db.clone(), dir.clone(), index);
+
+        // Star track 0 and 1
+        client.set_track_saved("local:0", true).await.unwrap();
+        client.set_track_saved("local:1", true).await.unwrap();
+
+        // Record a play for track 2 in plays table
+        {
+            let conn = db.open().unwrap();
+            conn.execute(
+                "INSERT INTO plays (scope, provider, track_id, played_at, name, playable, artists, artist_refs, album, album_id, cover, duration_ms, explicit)
+                 VALUES ('youtube:youtube-guest', 'local', 'local:2', 1000, 'Track 2', 1, 'Artist 2', '[]', 'Album', NULL, NULL, 180000, 0)",
+                [],
+            ).unwrap();
+        }
+
+        let feed = client.home().await.unwrap();
+        let quick = feed.quick_picks.expect("quick picks present");
+        assert_eq!(quick.len(), 20);
+
+        // Starred tracks (0, 1) and most played track (2) should be present
+        let ids: Vec<&str> = quick.iter().filter_map(|t| t.id.as_deref()).collect();
+        assert!(ids.contains(&"local:0"));
+        assert!(ids.contains(&"local:1"));
+        assert!(ids.contains(&"local:2"));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

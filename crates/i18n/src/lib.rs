@@ -88,6 +88,19 @@ pub fn lookup(key: &str, args: Option<&FluentArgs>) -> SharedString {
     SharedString::from(key.to_owned())
 }
 
+pub fn translate(key: &str) -> SharedString {
+    let active = language();
+    if let Some(text) = format(active, key, None) {
+        return text;
+    }
+    if active != Language::English
+        && let Some(text) = format(Language::English, key, None)
+    {
+        return text;
+    }
+    SharedString::from(key.to_owned())
+}
+
 fn format(language: Language, key: &str, args: Option<&FluentArgs>) -> Option<SharedString> {
     let bundle = BUNDLES.get(language as usize)?;
     let pattern = bundle.get_message(key)?.value()?;
@@ -188,5 +201,12 @@ mod tests {
                 assert_eq!(format(language, "count-songs", Some(&args)).unwrap(), text);
             }
         }
+    }
+
+    #[test]
+    fn translate_resolves_known_key_or_preserves_literal() {
+        assert_eq!(translate("home-quick-picks"), "Quick picks");
+        assert_eq!(translate("home-recently-added"), "Recently added");
+        assert_eq!(translate("Top 50 - Global"), "Top 50 - Global");
     }
 }

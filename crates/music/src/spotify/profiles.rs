@@ -2,23 +2,15 @@ use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context as _, Result};
 use librespot_core::Session;
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use tokio::task::JoinSet;
 
 use crate::spotify::wire;
-use crate::{Contributor, Playlist, UserDetail};
+use crate::{Contributor, Playlist, UserDetail, escape};
 
 const USER_PREFIX: &str = "spotify:user:";
 const PLAYLIST_PREFIX: &str = "spotify:playlist:";
 const PLAYLISTS: u32 = 50;
-
-/// The unreserved characters of RFC 3986, everything a path segment may carry as it is.
-const UNRESERVED: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'_')
-    .remove(b'~');
 
 #[derive(Debug, Default, Deserialize)]
 struct Profile {
@@ -60,12 +52,6 @@ impl Profile {
             .filter(|url| !url.is_empty())
             .map(str::to_owned)
     }
-}
-
-/// Percent-encodes a username for a url path. An account name may hold anything, a Turkish
-/// ö among it, and spclient pastes the name into the endpoint exactly as it is given.
-pub fn escaped(username: &str) -> String {
-    utf8_percent_encode(username, UNRESERVED).to_string()
 }
 
 pub fn username(uri: &str) -> String {
@@ -149,8 +135,16 @@ async fn counts(session: &Session, username: &str, found: &Profile) -> (Option<u
 async fn circle(session: &Session, username: &str, followers: bool) -> Option<u64> {
     let client = session.spclient();
     let body = match followers {
-        true => client.get_user_followers(&escaped(username)).await,
-        false => client.get_user_following(&escaped(username)).await,
+        true => {
+            client
+                .get_user_followers(&escape::component(username))
+                .await
+        }
+        false => {
+            client
+                .get_user_following(&escape::component(username))
+                .await
+        }
     }
     .inspect_err(|error| log::debug!("profiles: cannot count the circle of {username}: {error}"))
     .ok()?;
@@ -165,7 +159,7 @@ async fn circle(session: &Session, username: &str, followers: bool) -> Option<u6
 async fn fetch(session: &Session, username: &str, playlists: u32) -> Option<Profile> {
     let body = session
         .spclient()
-        .get_user_profile(&escaped(username), Some(playlists), Some(0))
+        .get_user_profile(&escape::component(username), Some(playlists), Some(0))
         .await
         .inspect_err(|error| log::debug!("profiles: cannot resolve {username}: {error}"))
         .ok()?;

@@ -7,6 +7,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-09-24
+
 ### Added
 
 - The Add to playlist menu has a search field at the top. Type to narrow the list, then use the
@@ -17,7 +19,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Sonora plays every track at its own sample rate rather than resampling it to the device
   default, so a 96 kHz FLAC leaves the app at 96 kHz. Moving between tracks of different rates
   leaves a short pause.
+- Normalize loudness now works for Apple Music, Deezer, local files, and Navidrome and other
+  OpenSubsonic servers, using each service's own loudness figure and the tracks' ReplayGain
+  tags. A quiet track is raised only as far as it can go without clipping.
 - Albanian (Shqip) interface language.
+- Guest mode now serves recommendations from your local music collection on the Home screen,
+  including Quick picks, recently added albums, local playlists, and artists.
 
 ### Changed
 
@@ -43,6 +50,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- The Playlists page loads for a Spotify account whose username has a letter outside plain
+  ASCII, such as ö, instead of failing with a 400 error.
+- Playback comes back on its own after your only output device disappears and returns, so a
+  Bluetooth headset that drops its link and reconnects picks the track up again rather than
+  leaving Sonora silent until you restart it.
+- Apple Music plays with the Widevine module an older Chromium keeps, which Sonora found
+  before but could not open.
+- The Widevine row in Settings shows its whole explanation rather than cutting it off, and
+  offers the download from Google even when a browser's copy was found. A copy downloaded that
+  way is the one Sonora uses from then on.
 - An empty Apple Music playlist opens as an empty playlist rather than a "Could not load" error.
 - The library shown at launch from the last session stays whole until the provider has sent
   all of it, rather than shrinking to the first page and filling back in.
@@ -61,6 +78,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   settled.
 - The tray icon of the Flatpak and the AppImage shows the Sonora logo in trays such as Dank
   Material Shell, which drew a missing-texture placeholder in its place.
+- Updating on Windows no longer puts the Sonora shortcut back on your desktop after you deleted
+  it, or overwrites one you made yourself.
+- Apple Music pins sync both ways: what is pinned on music.apple.com joins the sidebar,
+  and pinning an album, artist or playlist in Sonora pins it there too.
+- Editing the track or disc number of a local MP3 now sticks, including in files that carry an
+  ID3v1 tag or an older tag stacked behind the first. An ID3v2.3 file stays ID3v2.3, so other
+  players and taggers see the new number too.
 
 ## [0.38.0] - 2026-09-20
 
@@ -1781,7 +1805,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 Initial release: a native Spotify client with playback, an interactive queue, the saved library,
 search, album, playlist, artist and song pages, context menus and adaptive theming.
 
-[unreleased]: https://github.com/sonorahq/sonora/compare/v0.38.0...HEAD
+[unreleased]: https://github.com/sonorahq/sonora/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/sonorahq/sonora/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/sonorahq/sonora/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/sonorahq/sonora/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/sonorahq/sonora/compare/v0.35.0...v0.36.0

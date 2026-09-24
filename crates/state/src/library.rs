@@ -390,6 +390,12 @@ fn take<T>(
     })
 }
 
+/// Whether the provider lists `uri` as pinned. A provider may leave unpinned items out
+/// entirely, so a missing item reads as unpinned.
+fn holds_pin(items: &[music::PinTarget], uri: &str) -> bool {
+    items.iter().any(|item| item.uri == uri && item.pinned)
+}
+
 impl Library {
     fn toggle_saved<S: Savable>(&mut self, mut item: S, cx: &mut Context<Self>) {
         let Some(id) = item.id().map(str::to_owned) else {
@@ -696,9 +702,9 @@ pub struct Library {
     session: Entity<Session>,
     io: Io,
     playlist_task: Option<Task<()>>,
-    sidebar_task: Option<Task<()>>,
-    sidebar_pin_task: Option<Task<()>>,
-    sidebar_items: Option<Vec<music::LibraryItem>>,
+    pin_targets_task: Option<Task<()>>,
+    pin_task: Option<Task<()>>,
+    pin_targets: Option<Vec<music::PinTarget>>,
     pending: HashMap<String, Task<()>>,
     pending_albums: HashMap<String, Task<()>>,
     pending_artists: HashMap<String, Task<()>>,
@@ -721,24 +727,24 @@ impl Library {
     ) -> Self {
         cx.subscribe(&session, |this, session, event, cx| match event {
             SessionEvent::SignedIn => {
-                this.sidebar_pin_task = None;
+                this.pin_task = None;
                 if !session.read(cx).authenticated() {
-                    this.sidebar_task = None;
-                    this.sidebar_items = None;
+                    this.pin_targets_task = None;
+                    this.pin_targets = None;
                     this.held_mut(Shelf::Streaming).clear();
                     cx.notify();
                     return;
                 }
-                this.sidebar_items = None;
-                this.sync_sidebar(cx);
+                this.pin_targets = None;
+                this.sync_pin_targets(cx);
                 this.prime(Shelf::Streaming, cx);
                 this.load(Shelf::Streaming, cx);
             }
             SessionEvent::SignedOut => {
                 this.forget(Shelf::Streaming, cx);
-                this.sidebar_pin_task = None;
-                this.sidebar_task = None;
-                this.sidebar_items = None;
+                this.pin_task = None;
+                this.pin_targets_task = None;
+                this.pin_targets = None;
                 this.contents.clear();
                 this.reading.clear();
                 this.mosaics.clear();
@@ -773,9 +779,9 @@ impl Library {
             session,
             io,
             playlist_task: None,
-            sidebar_task: None,
-            sidebar_pin_task: None,
-            sidebar_items: None,
+            pin_targets_task: None,
+            pin_task: None,
+            pin_targets: None,
             pending: HashMap::new(),
             pending_albums: HashMap::new(),
             pending_artists: HashMap::new(),
@@ -915,19 +921,19 @@ impl Library {
         }
     }
 
-    pub fn sidebar_items(&self) -> Option<&[music::LibraryItem]> {
-        self.sidebar_items.as_deref()
+    pub fn pin_targets(&self) -> Option<&[music::PinTarget]> {
+        self.pin_targets.as_deref()
     }
 
-    pub fn sidebar_pin_pending(&self) -> bool {
-        self.sidebar_pin_task.is_some()
+    pub fn pin_pending(&self) -> bool {
+        self.pin_task.is_some()
     }
 
     /// Changes the provider's own pin for `uri` and calls `done` with whether it stuck. A second
     /// change replaces the one in flight, so the last one wins and only its `done` runs. A pin
-    /// the provider turns away for being past its limit counts as stuck too, since Sonora keeps
-    /// the pin itself and the sidebar has no limit of its own.
-    pub fn set_sidebar_pinned(
+    /// the provider turns away for being past its limit or outside the library counts as stuck
+    /// too, since Sonora keeps the pin itself and the sidebar has no limit of its own.
+    pub fn set_pinned(
         &mut self,
         uri: String,
         pinned: bool,
@@ -935,10 +941,9 @@ impl Library {
         cx: &mut Context<Self>,
     ) {
         if self
-            .sidebar_items
+            .pin_targets
             .as_ref()
-            .and_then(|items| items.iter().find(|item| item.uri == uri))
-            .is_some_and(|item| item.pinned == pinned)
+            .is_some_and(|items| holds_pin(items, &uri) == pinned)
         {
             return;
         }
@@ -946,36 +951,39 @@ impl Library {
             return;
         };
         // Keep a polling response from overwriting the result of this mutation.
-        self.sidebar_task = None;
+        self.pin_targets_task = None;
         let io = self.io.clone();
-        let order = music::LibraryOrder::default();
-        self.sidebar_pin_task = Some(cx.spawn(async move |this, cx| {
+        self.pin_task = Some(cx.spawn(async move |this, cx| {
             let result = join(io.spawn(async move {
-                let result = client.set_library_item_pinned(&uri, pinned).await?;
-                if result == music::LibraryPinResult::LimitReached {
+                let result = client.set_pinned(&uri, pinned).await?;
+                if result != music::PinOutcome::Updated {
                     return Ok((result, None));
                 }
-                let items = client.library_items(order).await?;
+                let items = client.pin_targets().await?;
                 anyhow::ensure!(
-                    items.as_ref().is_some_and(|items| items
-                        .iter()
-                        .any(|item| item.uri == uri && item.pinned == pinned)),
-                    "Spotify did not confirm the updated library pin"
+                    items
+                        .as_ref()
+                        .is_some_and(|items| holds_pin(items, &uri) == pinned),
+                    "the provider did not confirm the updated library pin"
                 );
                 Ok((result, items))
             }))
             .await;
             this.update(cx, |this, cx| {
-                this.sidebar_pin_task = None;
+                this.pin_task = None;
                 match result {
-                    Ok((music::LibraryPinResult::Updated, items)) => {
-                        this.sidebar_items = items;
+                    Ok((music::PinOutcome::Updated, items)) => {
+                        this.pin_targets = items;
                         done(true, cx);
                     }
-                    Ok((music::LibraryPinResult::LimitReached, _)) => {
+                    Ok((music::PinOutcome::LimitReached, _)) => {
                         log::debug!(
                             "library: the provider's pin limit is reached, pinning locally"
                         );
+                        done(true, cx);
+                    }
+                    Ok((music::PinOutcome::Outside, _)) => {
+                        log::debug!("library: the item is not in the library, pinning locally");
                         done(true, cx);
                     }
                     Err(error) => {
@@ -984,7 +992,7 @@ impl Library {
                         done(false, cx);
                     }
                 }
-                this.sync_sidebar(cx);
+                this.sync_pin_targets(cx);
                 cx.notify();
             })
             .ok();
@@ -992,29 +1000,28 @@ impl Library {
         cx.notify();
     }
 
-    fn sync_sidebar(&mut self, cx: &mut Context<Self>) {
-        if self.sidebar_pin_pending() {
+    fn sync_pin_targets(&mut self, cx: &mut Context<Self>) {
+        if self.pin_pending() {
             return;
         }
-        self.sidebar_task = None;
+        self.pin_targets_task = None;
         let Some(client) = self.session.read(cx).client_of(Shelf::Streaming) else {
             return;
         };
         let io = self.io.clone();
-        let order = music::LibraryOrder::default();
-        self.sidebar_task = Some(cx.spawn(async move |this, cx| {
+        self.pin_targets_task = Some(cx.spawn(async move |this, cx| {
             loop {
                 let client = client.clone();
-                let loaded = join(io.spawn(async move { client.library_items(order).await })).await;
+                let loaded = join(io.spawn(async move { client.pin_targets().await })).await;
                 if this
                     .update(cx, |this, cx| match loaded {
-                        Ok(items) if items != this.sidebar_items => {
-                            this.sidebar_items = items;
+                        Ok(items) if items != this.pin_targets => {
+                            this.pin_targets = items;
                             cx.notify();
                         }
                         Ok(_) => {}
                         Err(error) => {
-                            log::warn!("library: cannot synchronize sidebar library: {error:#}");
+                            log::warn!("library: cannot read the provider's pins: {error:#}");
                             crate::noted(&error, cx);
                         }
                     })
@@ -1902,7 +1909,7 @@ impl Library {
 
     pub fn refresh(&mut self, shelf: Shelf, cx: &mut Context<Self>) {
         if shelf == Shelf::Streaming {
-            self.sync_sidebar(cx);
+            self.sync_pin_targets(cx);
         }
         self.load(shelf, cx);
     }

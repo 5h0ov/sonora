@@ -9,16 +9,16 @@ use std::time::Duration;
 use anyhow::Result;
 use async_trait::async_trait;
 
-use crate::engine::{self, Fetch};
+use crate::engine::{self, Fetch, Loudness};
 use crate::stream::{Plain, Reader, Stream};
-use crate::subsonic::client::SubsonicClient;
+use crate::subsonic::client::{Details, SubsonicClient};
 use crate::{PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
 
-/// A track downloading, and how long the server says it is.
+/// A track downloading, and what the server says about its length and loudness.
 #[derive(Clone)]
 pub struct Loaded {
     stream: Stream,
-    duration: Option<Duration>,
+    details: Details,
 }
 
 pub struct Factory {
@@ -55,21 +55,25 @@ impl Fetch for Subsonic {
         "subsonic"
     }
 
-    /// Opens the stream and asks for the length at the same time, so neither round trip waits
-    /// on the other; the preroll usually covers the length lookup entirely.
+    /// Opens the stream and asks for the length and loudness at the same time, so neither round
+    /// trip waits on the other. The preroll usually covers the lookup entirely.
     async fn load(&self, id: &str) -> Result<Loaded> {
-        let (stream, duration) = tokio::join!(
+        let (stream, details) = tokio::join!(
             async { Stream::open(self.client.open_stream(id).await?, Plain).await },
-            self.client.duration(id),
+            self.client.details(id),
         );
         Ok(Loaded {
             stream: stream?,
-            duration,
+            details,
         })
     }
 
     fn length(&self, loaded: &Loaded) -> Option<Duration> {
-        loaded.duration
+        loaded.details.duration
+    }
+
+    fn loudness(&self, loaded: &Loaded) -> Option<Loudness> {
+        loaded.details.loudness
     }
 
     /// Builds a decoder over a stream and places it at `at`. The bytes past the preroll are

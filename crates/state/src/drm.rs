@@ -5,9 +5,10 @@
 //! Nothing is looked for until the current provider is one whose tracks need the module, so a
 //! Spotify or YouTube run never touches a browser folder. With none found, the user is asked
 //! whether to download it from Google, shown Google's terms out of the downloaded archive, and
-//! asked again before it is installed into Sonora's own store. A module accepted that way is
-//! kept current without asking again. With nothing accepted, protected providers keep their
-//! metadata and refuse to play.
+//! asked again before it is installed into Sonora's own store. Settings offers the same
+//! download beside a browser's copy, since that copy can be one the host cannot open. A
+//! module accepted that way is preferred over any browser's and kept current without asking
+//! again. With nothing accepted, protected providers keep their metadata and refuse to play.
 
 use gpui::{App, Context, Entity, Task};
 use music::drm::{self, Offer, Origin};
@@ -54,6 +55,9 @@ pub struct Drm {
     /// Whether the machine has been searched this run. The search happens once, the first
     /// time a protected provider is the current one, and later switches only reuse its answer.
     looked: bool,
+    /// Where the module in use came from when the user asked for Google's copy beside it. A
+    /// download that fails or is declined goes back to that one.
+    standing: Option<Origin>,
 }
 
 impl Drm {
@@ -75,11 +79,18 @@ impl Drm {
             io,
             task: None,
             looked: false,
+            standing: None,
         }
     }
 
     pub fn state(&self) -> &CdmState {
         &self.state
+    }
+
+    /// Whether the download under way would replace a module already here, a browser's copy the
+    /// user asked Google's to stand in for.
+    pub fn replacing(&self) -> bool {
+        self.standing.is_some()
     }
 
     /// Whether this build has a host for a module at all. False means the platform has no
@@ -144,16 +155,22 @@ impl Drm {
         cx.notify();
     }
 
-    /// The user's no, to either question. A download under way is dropped.
+    /// The user's no, to either question. A download under way is dropped, and a module that
+    /// was already here stays in use.
     pub fn dismiss(&mut self, cx: &mut Context<Self>) {
         self.task = None;
         self.offer = None;
-        self.state = CdmState::Declined;
+        self.state = self.fall_back(CdmState::Declined);
         cx.notify();
     }
 
-    /// The user's yes to downloading: fetches the archive and puts the terms up.
+    /// The user's yes to downloading: fetches the archive and puts the terms up. Asked while
+    /// a browser's copy is in use, that copy stays in use unless Google's is installed.
     pub fn download(&mut self, cx: &mut Context<Self>) {
+        self.standing = match self.state {
+            CdmState::Ready(origin) => Some(origin),
+            _ => None,
+        };
         self.state = CdmState::Offering;
         cx.notify();
 
@@ -172,9 +189,9 @@ impl Drm {
                     }
                     Ok(Err(error)) => {
                         log::warn!("drm: cannot download the widevine module: {error:#}");
-                        this.state = CdmState::Missing;
+                        this.state = this.fall_back(CdmState::Missing);
                     }
-                    Err(_) => this.state = CdmState::Missing,
+                    Err(_) => this.state = this.fall_back(CdmState::Missing),
                 }
                 cx.notify();
             })
@@ -196,12 +213,15 @@ impl Drm {
             this.update(cx, |this, cx| {
                 this.task = None;
                 this.state = match installed {
-                    Ok(Ok(found)) => CdmState::Ready(found.origin),
+                    Ok(Ok(found)) => {
+                        this.standing = None;
+                        CdmState::Ready(found.origin)
+                    }
                     Ok(Err(error)) => {
                         log::warn!("drm: cannot install the widevine module: {error:#}");
-                        CdmState::Missing
+                        this.fall_back(CdmState::Missing)
                     }
-                    Err(_) => CdmState::Missing,
+                    Err(_) => this.fall_back(CdmState::Missing),
                 };
                 cx.notify();
             })
@@ -242,6 +262,12 @@ impl Drm {
             })
             .ok();
         }));
+    }
+
+    /// The module that was in use before a download the user asked for, or `otherwise` when
+    /// there was none. Either way the download no longer stands in front of it.
+    fn fall_back(&mut self, otherwise: CdmState) -> CdmState {
+        self.standing.take().map_or(otherwise, CdmState::Ready)
     }
 
     /// Fetches a newer version of a module the user accepted before, without asking. The one

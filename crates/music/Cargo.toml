@@ -17,6 +17,7 @@ base64.workspace = true
 blowfish.workspace = true
 bytes.workspace = true
 cbc.workspace = true
+fastrand.workspace = true
 flate2.workspace = true
 cpal.workspace = true
 futures.workspace = true

@@ -435,19 +435,20 @@ pub struct LyricsHit {
     pub writers: Vec<String>,
 }
 
-/// A provider's mixed library row, in the order returned by its library service.
+/// Something the provider keeps sidebar pins for, with whether it is pinned now. The uri is
+/// the provider's own and is what `MusicApi::set_pinned` takes.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct LibraryItem {
+pub struct PinTarget {
     pub uri: String,
     pub name: String,
     pub subtitle: String,
     pub cover: Option<String>,
-    pub kind: LibraryItemKind,
+    pub kind: PinTargetKind,
     pub pinned: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LibraryItemKind {
+pub enum PinTargetKind {
     Playlist,
     Album,
     Artist,
@@ -457,26 +458,12 @@ pub enum LibraryItemKind {
     Folder,
 }
 
+/// How a provider answered a pin change. `LimitReached` means it turned the pin away for
+/// holding too many already, and `Outside` that it can only pin what is in the listener's
+/// library. Either way the pin stays a local one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum LibraryPinResult {
+pub enum PinOutcome {
     Updated,
     LimitReached,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum LibraryOrder {
-    #[default]
-    Recents,
-    RecentlyAdded,
-    Alphabetical,
-    Creator,
-}
-
-impl LibraryOrder {
-    pub const ALL: [Self; 4] = [
-        Self::Recents,
-        Self::RecentlyAdded,
-        Self::Alphabetical,
-        Self::Creator,
-    ];
+    Outside,
 }

@@ -13,7 +13,7 @@ use protobuf::{Message as _, MessageField};
 use tokio::task::JoinSet;
 
 use crate::spotify::{collection, profiles, wire};
-use crate::{Contributor, GenreItem, GenreSection, Playlist, PlaylistDetail, Track};
+use crate::{Contributor, GenreItem, GenreSection, Playlist, PlaylistDetail, Track, escape};
 
 const TRACK_PREFIX: &str = "spotify:track:";
 const PLAYLIST_PREFIX: &str = "spotify:playlist:";
@@ -313,7 +313,10 @@ pub async fn modified(session: &Session, ids: Vec<String>) -> HashMap<String, i6
 }
 
 async fn stamp(session: &Session, playlist_id: &str) -> Option<i64> {
-    let endpoint = format!("/playlist/v2/playlist/{playlist_id}?from=0&length=0");
+    let endpoint = format!(
+        "/playlist/v2/playlist/{}?from=0&length=0",
+        escape::component(playlist_id)
+    );
     let body = session
         .spclient()
         .request(&Method::GET, &endpoint, None, None)
@@ -339,14 +342,30 @@ async fn snapshot(session: &Session, playlist_id: &str) -> Result<SelectedListCo
 }
 
 async fn edit(session: &Session, playlist_id: &str, body: &ListChanges) -> Result<Vec<u8>> {
-    let endpoint = format!("/playlist/v2/playlist/{playlist_id}/changes");
+    let endpoint = format!(
+        "/playlist/v2/playlist/{}/changes",
+        escape::component(playlist_id)
+    );
     post(session, &endpoint, body).await
 }
 
-async fn fetch_rootlist(session: &Session) -> Result<SelectedListContent> {
-    let body = session
+/// Reads one page of the signed-in account's rootlist. This stands in for librespot's
+/// `get_rootlist`, which pastes the username into the path unescaped, so an account whose name
+/// holds an ö gets a 400 back.
+pub async fn rootlist_page(session: &Session, from: usize, length: usize) -> Result<Vec<u8>> {
+    let endpoint = format!(
+        "/playlist/v2/user/{}/rootlist?decorate=revision,attributes,length,owner,capabilities,status_code&from={from}&length={length}",
+        escape::component(&session.username())
+    );
+    let reply = session
         .spclient()
-        .get_rootlist(0, Some(ROOTLIST_LIMIT))
+        .request(&Method::GET, &endpoint, None, None)
+        .await?;
+    Ok(reply.to_vec())
+}
+
+async fn fetch_rootlist(session: &Session) -> Result<SelectedListContent> {
+    let body = rootlist_page(session, 0, ROOTLIST_LIMIT)
         .await
         .context("cannot read the rootlist")?;
     SelectedListContent::parse_from_bytes(&body).context("cannot decode the rootlist")
@@ -361,7 +380,10 @@ async fn rootlist(session: &Session, uri: &str) -> Result<(SelectedListContent, 
 }
 
 async fn rootlist_edit(session: &Session, body: &ListChanges) -> Result<Vec<u8>> {
-    let endpoint = format!("/playlist/v2/user/{}/rootlist/changes", session.username());
+    let endpoint = format!(
+        "/playlist/v2/user/{}/rootlist/changes",
+        escape::component(&session.username())
+    );
     post(session, &endpoint, body).await
 }
 

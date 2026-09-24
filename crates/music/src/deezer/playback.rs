@@ -13,15 +13,16 @@ use rodio::Source as _;
 
 use crate::deezer::client::DeezerClient;
 use crate::deezer::{Stream, Striped};
-use crate::engine::{self, Fetch};
+use crate::engine::{self, Fetch, Loudness};
 use crate::stream::Reader;
 use crate::{PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
 
-/// A track downloading and decrypting, and how long Deezer says it is.
+/// A track downloading and decrypting, and how long and how loud Deezer says it is.
 #[derive(Clone)]
 pub struct Loaded {
     stream: Stream,
     duration: Option<Duration>,
+    loudness: Option<Loudness>,
 }
 
 pub struct Factory {
@@ -61,13 +62,21 @@ impl Fetch for Deezer {
     /// Resolves the stream url and its key together, since one answer carries both, and starts
     /// the download decrypting as it arrives.
     async fn load(&self, id: &str) -> Result<Loaded> {
-        let (response, key, duration) = self.client.open_stream(id).await?;
-        let stream = Stream::open(response, Striped::new(&key)).await?;
-        Ok(Loaded { stream, duration })
+        let opened = self.client.open_stream(id).await?;
+        let stream = Stream::open(opened.response, Striped::new(&opened.key)).await?;
+        Ok(Loaded {
+            stream,
+            duration: opened.duration,
+            loudness: opened.loudness,
+        })
     }
 
     fn length(&self, loaded: &Loaded) -> Option<Duration> {
         loaded.duration
+    }
+
+    fn loudness(&self, loaded: &Loaded) -> Option<Loudness> {
+        loaded.loudness
     }
 
     /// Builds a decoder over a stream and places it at `at`. The bytes past the preroll are

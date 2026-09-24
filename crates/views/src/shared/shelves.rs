@@ -205,7 +205,7 @@ impl Shelves {
                     .flex()
                     .items_end()
                     .h(head(window, cx))
-                    .child(heading(SharedString::from(section.title.clone()), cx)),
+                    .child(heading(i18n::translate(&section.title), cx)),
             )
             .child(spread(cards, lanes))
             .into_any_element()
@@ -242,7 +242,7 @@ impl Shelves {
                     .justify_between()
                     .gap_4()
                     .h(head(window, cx))
-                    .child(heading(SharedString::from(section.title.clone()), cx))
+                    .child(heading(i18n::translate(&section.title), cx))
                     .when(crowded, |this| {
                         this.child(self.arrows(place, &handle, &glide, me))
                     }),

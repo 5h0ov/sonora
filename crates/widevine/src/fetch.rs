@@ -18,7 +18,7 @@ use anyhow::{Context as _, Result, bail, ensure};
 use serde_json::{Value, json};
 use sha2::{Digest as _, Sha256};
 
-use crate::source::{ARCH, Found, LIBRARY, OS, Origin, remember, store, version};
+use crate::source::{ARCH, Found, LIBRARY, OS, Origin, prefer, remember, store, version};
 
 /// The update service every Chrome asks for its components.
 const UPDATE_URL: &str = "https://update.googleapis.com/service/update2/json";
@@ -88,7 +88,7 @@ impl Offer {
             .with_context(|| format!("cannot move {} into place", path.display()))?;
         log::info!("widevine: {} is in the store", self.release.version);
 
-        let found = remember(found(path));
+        let found = prefer(found(path));
         prune(&self.release.version, &found.path);
         Ok(found)
     }

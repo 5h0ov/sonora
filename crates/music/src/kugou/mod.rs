@@ -5,12 +5,13 @@ use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
-use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
 use serde::Deserialize;
 use tokio::task::JoinSet;
 
 use crate::lyrics::sheet;
-use crate::{Lyrics, LyricsHit, LyricsLine, LyricsProvider, LyricsQuery, LyricsWord, Voice};
+use crate::{
+    Lyrics, LyricsHit, LyricsLine, LyricsProvider, LyricsQuery, LyricsWord, Voice, escape,
+};
 
 const SOURCE: &str = "Kugou";
 const SEARCH: &str = "https://mobiles.kugou.com/api/v3/search/song";
@@ -40,7 +41,7 @@ impl Kugou {
     }
 
     async fn songs(&self, wanted: &str) -> Result<Vec<Song>> {
-        let keyword = utf8_percent_encode(wanted, NON_ALPHANUMERIC);
+        let keyword = escape::component(wanted);
         let response = self
             .http
             .get(format!(

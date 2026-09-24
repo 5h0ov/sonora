@@ -21,10 +21,10 @@ use crate::apple::client::AppleClient;
 use crate::apple::progressive::{Cenc, Media};
 use crate::apple::stream;
 use crate::audio::Trimmed;
-use crate::engine::{self, Fetch};
+use crate::engine::{self, Fetch, Loudness};
 use crate::stream::Reader;
 use crate::trim;
-use crate::{MusicApi as _, PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
+use crate::{PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
 
 /// Priming frames at the head of an Apple AAC encode, before the first frame of music.
 ///
@@ -35,11 +35,12 @@ use crate::{MusicApi as _, PlaybackConfig, PlaybackEvents, PlaybackFactory, Play
 /// as much as the catalog says the track lasts, which is the other half of the same problem.
 const PRIMING: u32 = 2112;
 
-/// A track resolved, licensed and arriving.
+/// A track resolved, licensed and arriving, with how long and how loud the catalog says it is.
 #[derive(Clone)]
 pub struct Loaded {
     media: Media,
     duration: Option<Duration>,
+    loudness: Option<Loudness>,
 }
 
 pub struct Factory {
@@ -76,29 +77,30 @@ impl Fetch for Apple {
         "apple"
     }
 
-    /// Resolves and licenses the track, and asks the catalog how long it is at the same time.
+    /// Resolves and licenses the track, and asks the catalog how long and how loud it is at the
+    /// same time.
     /// The length comes back beside the media rather than after it, because the tail trim that
     /// makes a join gapless needs it: the encode itself says nowhere how long the music is,
     /// only how long the file is.
     async fn load(&self, id: &str) -> Result<Loaded> {
-        let (prepared, metadata) = tokio::join!(
+        let (prepared, details) = tokio::join!(
             stream::prepare(self.client.http(), id, self.client.user_token()),
-            self.client.track(id),
+            self.client.playback_details(id),
         );
         let prepared = prepared?;
         Ok(Loaded {
-            duration: prepared.duration.or_else(|| {
-                metadata
-                    .map(|track| track.duration)
-                    .ok()
-                    .filter(|length| !length.is_zero())
-            }),
+            duration: prepared.duration.or(details.duration),
+            loudness: details.loudness,
             media: prepared.media,
         })
     }
 
     fn length(&self, loaded: &Loaded) -> Option<Duration> {
         loaded.duration
+    }
+
+    fn loudness(&self, loaded: &Loaded) -> Option<Loudness> {
+        loaded.loudness
     }
 
     /// A fragmented stream has no index for symphonia to jump around in, so a seek opens a

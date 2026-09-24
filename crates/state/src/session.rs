@@ -357,6 +357,11 @@ impl Session {
         self.authenticated
     }
 
+    /// Whether the active session is an anonymous guest session rather than an authenticated account.
+    pub fn guest(&self) -> bool {
+        self.client.is_some() && !self.authenticated
+    }
+
     /// What the live streaming provider can do beyond listing and playing. Nothing is offered
     /// while signed out, which is what the empty set means.
     pub fn capabilities(&self) -> Capabilities {

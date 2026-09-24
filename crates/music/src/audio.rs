@@ -442,6 +442,12 @@ impl<I: Source> Source for Trimmed<I> {
     }
 }
 
+/// Whether the system has a default output device to play on. A device can be missing for as
+/// long as it takes a headset to reconnect, so the engines ask again rather than give up.
+pub fn available() -> bool {
+    cpal::default_host().default_output_device().is_some()
+}
+
 fn ident(device: &cpal::Device) -> String {
     device
         .id()

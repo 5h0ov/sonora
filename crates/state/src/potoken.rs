@@ -83,7 +83,7 @@ impl PoToken {
             return;
         }
         let target = webview::Target {
-            url: format!("{PAGE}?binding={}", escaped(&binding)),
+            url: format!("{PAGE}?binding={}", music::escape::component(&binding)),
             landing: LANDING.to_string(),
             domain: DOMAIN.to_string(),
             proof: vec![COOKIE.to_string()],
@@ -163,21 +163,6 @@ fn value<'a>(header: &'a str, name: &str) -> Option<&'a str> {
         .filter_map(|pair| pair.trim().split_once('='))
         .find(|(key, _)| *key == name)
         .map(|(_, value)| value)
-}
-
-/// Percent-encodes everything a query value may not carry. Visitor data arrives base64url and a
-/// data sync id carries `||`, so neither is safe to paste into a url as it stands.
-fn escaped(value: &str) -> String {
-    let mut out = String::with_capacity(value.len());
-    for byte in value.bytes() {
-        match byte {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
-                out.push(byte as char)
-            }
-            _ => out.push_str(&format!("%{byte:02X}")),
-        }
-    }
-    out
 }
 
 /// Starts the minting window. Nothing holds it but the global, and nothing reads it: the client

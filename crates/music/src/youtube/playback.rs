@@ -14,7 +14,7 @@ use rodio::Source as _;
 use ytmusic::YtMusic;
 
 use crate::audio::Trimmed;
-use crate::engine::{self, Fetch};
+use crate::engine::{self, Fetch, Loudness};
 use crate::trim;
 use crate::{PlaybackConfig, PlaybackEvents, PlaybackFactory, Player};
 
@@ -29,6 +29,8 @@ const PER_MIB: Duration = Duration::from_secs(4);
 const UNSIZED_MIB: u64 = 8;
 /// The attempts a fetch gets before the track is reported unavailable.
 const ATTEMPTS: u32 = 2;
+/// The level the stream host measures `loudnessDb` against, in LUFS.
+const REFERENCE_LUFS: f32 = -14.0;
 
 /// A track downloaded in full, with what the stream host said about its length and loudness.
 #[derive(Clone)]
@@ -91,8 +93,11 @@ impl Fetch for YouTube {
         loaded.duration
     }
 
-    fn loudness(&self, loaded: &Loaded) -> Option<f32> {
-        loaded.loudness_db
+    fn loudness(&self, loaded: &Loaded) -> Option<Loudness> {
+        loaded.loudness_db.map(|db| Loudness {
+            lufs: REFERENCE_LUFS + db,
+            peak: None,
+        })
     }
 
     fn gated(&self, error: &anyhow::Error) -> bool {

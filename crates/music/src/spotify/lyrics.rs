@@ -10,7 +10,9 @@ use tokio::sync::Mutex;
 
 use super::{auth, search};
 use crate::lyrics::{catalog, lrc};
-use crate::{Lyrics, LyricsHit, LyricsLine, LyricsProvider, LyricsQuery, LyricsWord, Voice};
+use crate::{
+    Lyrics, LyricsHit, LyricsLine, LyricsProvider, LyricsQuery, LyricsWord, Voice, escape,
+};
 
 const SOURCE: &str = "Spotify";
 
@@ -153,7 +155,8 @@ pub async fn lyrics(session: &Session, track_id: &str) -> Result<Option<Lyrics>>
     let request = Request::builder()
         .method(Method::GET)
         .uri(format!(
-            "{ENDPOINT}/{track_id}?format=json&vocalRemoval=false&market=from_token"
+            "{ENDPOINT}/{}?format=json&vocalRemoval=false&market=from_token",
+            escape::component(track_id)
         ))
         .header(header::ACCEPT, "application/json")
         .header("app-platform", APP_PLATFORM)
