@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use opensubsonic::data::{AlbumId3, ArtistId3, Child};
+use opensubsonic::data::{AlbumId3, ArtistId3, Child, RecordLabel};
 
 use crate::{Album, ArtistRef, Playlist, ReleaseType, SavedArtist, Track, UserProfile};
 
@@ -42,6 +42,7 @@ pub fn album(source: AlbumId3, cover: Option<String>, cover_large: Option<String
         source.display_artist,
     );
     let year = source.year.unwrap_or(0);
+    let label = labels(source.record_labels.as_deref());
     Album {
         id: source.id,
         name: source.name,
@@ -56,10 +57,22 @@ pub fn album(source: AlbumId3, cover: Option<String>, cover_large: Option<String
             0 => String::new(),
             _ => year.to_string(),
         },
-        label: String::new(),
+        label,
         copyrights: Vec::new(),
         added_at: None,
     }
+}
+
+/// The record labels an OpenSubsonic server lists for an album, joined into one credit. A
+/// server without the extension lists none, which leaves the label empty.
+pub fn labels(labels: Option<&[RecordLabel]>) -> String {
+    labels
+        .unwrap_or_default()
+        .iter()
+        .map(|label| label.name.trim())
+        .filter(|name| !name.is_empty())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn playlist(

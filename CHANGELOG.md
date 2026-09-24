@@ -14,6 +14,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Album pages now carry recommendations wherever the provider offers them: related
   releases and similar artists under Albums and Artists tabs, and Apple Music artists
   list what they appear on.
+- Album pages print the release's copyright line or record label under the tracks, on
+  Apple Music, Spotify, Deezer and OpenSubsonic servers that list one.
 
 ### Changed
 

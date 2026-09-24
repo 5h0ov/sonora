@@ -15,7 +15,7 @@ use ui::{
 };
 use ui::{
     ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pin, PinKind, Scrollbar, Scroller,
-    TableDelegate, TableEvent, TableState, Toggle, runtime, table,
+    TableDelegate, TableEvent, TableState, Text, Toggle, runtime, table,
 };
 
 use crate::shared::menus::{album_menu, playlist_menu};
@@ -26,7 +26,9 @@ use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
 use crate::shared::album_grid::CardGrid;
 use crate::shared::cards;
 use crate::shared::confirm::Confirm;
-use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero, release_date_label};
+use crate::shared::hero::{
+    HeroMetaStrip, HeroPlayButton, PageHero, copyright_notices, release_date_label,
+};
 use crate::shared::shelves::{Rail, RailSpec};
 use crate::shared::tracks::{
     PlaybackStatus, TrackField, TrackSource, Tracks, drop_picked, playback_status, playlist_columns,
@@ -612,6 +614,29 @@ impl DetailView {
         )]
     }
 
+    /// The album's copyright and label lines under the table, or nothing on a playlist and on
+    /// an album whose provider names neither.
+    fn notices(&self, cx: &App) -> Option<AnyElement> {
+        let theme = cx.theme();
+        let notices = copyright_notices(self.detail.read(cx).album()?);
+        if notices.is_empty() {
+            return None;
+        }
+        Some(
+            div()
+                .px(theme.metrics.pad * 2.)
+                .pt_2()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .min_w_0()
+                .text_size(theme.text(Text::Tiny))
+                .text_color(theme.muted_foreground)
+                .children(notices)
+                .into_any_element(),
+        )
+    }
+
     fn menu(&self, cx: &App) -> Option<Menu> {
         let detail = self.detail.read(cx);
         let id = detail.id()?.to_owned();
@@ -680,7 +705,8 @@ impl Render for DetailView {
                     .pb(inset)
                     .child(div().px(inset).child(self.header(cx)))
                     .child(table(&self.table))
-                    .child(div().px(inset).pt_6().children(rails)),
+                    .children(self.notices(cx))
+                    .child(div().px(inset).pt_10().children(rails)),
             )
             .when_some(context_menu, |this, menu| this.child(menu))
     }
