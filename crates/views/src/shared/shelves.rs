@@ -1,20 +1,16 @@
 use gpui::prelude::*;
 use gpui::{
-    AnyElement, App, Context, Div, ElementId, Entity, EntityId, MouseDownEvent, Pixels, Point,
-    ScrollHandle, ScrollWheelEvent, SharedString, WeakEntity, Window, div, point, px,
+    AnyElement, App, Context, Div, ElementId, Entity, EntityId, Pixels, Point, ScrollHandle,
+    ScrollWheelEvent, SharedString, WeakEntity, Window, div, point, px,
 };
 use std::rc::Rc;
 
 use music::{GenreItem, GenreSection};
 use state::Playback;
-use ui::{
-    ActiveTheme as _, Button, Card, Deck, Glide, Mode, Popup, Scrollbar, Skeleton, Text, heading,
-    snapped,
-};
+use ui::{ActiveTheme as _, Button, Card, Deck, Glide, Mode, Skeleton, Text, heading, snapped};
 
 use crate::shared::album_grid::CardGrid;
 use crate::shared::cards;
-use crate::shared::menus::{Item, ItemMenu};
 
 const PLATE: Pixels = px(260.);
 const LANES: usize = 5;
@@ -33,27 +29,15 @@ pub(crate) struct Shelves {
     host: EntityId,
     playback: Entity<Playback>,
     rails: Vec<(ScrollHandle, Glide)>,
-    /// The submenu state of a track's context menu.
-    menus: ItemMenu,
-    context_menu: Option<(Item, Point<Pixels>)>,
 }
 
 impl Shelves {
-    pub(crate) fn new(
-        id: &'static str,
-        host: EntityId,
-        playback: Entity<Playback>,
-        cx: &mut Context<Self>,
-    ) -> Self {
-        let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(host));
-
+    pub(crate) fn new(id: &'static str, host: EntityId, playback: Entity<Playback>) -> Self {
         Self {
             id,
             host,
             playback,
             rails: Vec::new(),
-            menus: ItemMenu::new(playlist_scrollbar, cx),
-            context_menu: None,
         }
     }
 
@@ -90,17 +74,6 @@ impl Shelves {
 
     pub(crate) fn reset(&mut self) {
         self.rails.clear();
-        self.context_menu = None;
-    }
-
-    fn popup(&self, cx: &mut Context<Self>) -> Option<Popup> {
-        let (item, at) = self.context_menu.clone()?;
-        let menu = item.menu(&self.menus, self.playback.clone(), false, cx);
-
-        Some(Popup::new(at, menu).on_close(cx.listener(|this, _, _, cx| {
-            this.context_menu = None;
-            cx.notify();
-        })))
     }
 
     pub(crate) fn render(
@@ -141,16 +114,11 @@ impl Shelves {
 
                 match mode {
                     Mode::Grid => shelves.rail(place, &sections, width, &holder, window, cx),
-                    Mode::List => shelves.lane(place, section, width, &holder, window, cx),
+                    Mode::List => shelves.lane(place, section, width, window, cx),
                 }
             });
 
-        div()
-            .relative()
-            .w_full()
-            .child(stack)
-            .children(self.popup(cx))
-            .into_any_element()
+        div().relative().w_full().child(stack).into_any_element()
     }
 
     fn height(
@@ -181,7 +149,6 @@ impl Shelves {
         place: usize,
         section: &GenreSection,
         width: Pixels,
-        me: &WeakEntity<Self>,
         window: &Window,
         cx: &App,
     ) -> AnyElement {
@@ -191,7 +158,7 @@ impl Shelves {
             .iter()
             .take(lanes * ROWS)
             .enumerate()
-            .map(|(index, item)| self.card(place * 100 + index, item, None, me, cx))
+            .map(|(index, item)| self.card(place * 100 + index, item, None, cx))
             .collect();
 
         div()
@@ -278,14 +245,8 @@ impl Shelves {
                                     return div().into_any_element();
                                 };
 
-                                let holder = view.downgrade();
-                                view.read(cx).card(
-                                    place * 100 + index,
-                                    item,
-                                    Some(card),
-                                    &holder,
-                                    cx,
-                                )
+                                view.read(cx)
+                                    .card(place * 100 + index, item, Some(card), cx)
                             }),
                     ),
             )
@@ -347,35 +308,10 @@ impl Shelves {
             })
     }
 
-    fn card(
-        &self,
-        id: usize,
-        item: &GenreItem,
-        tile: Option<Pixels>,
-        me: &WeakEntity<Self>,
-        cx: &App,
-    ) -> AnyElement {
+    fn card(&self, id: usize, item: &GenreItem, tile: Option<Pixels>, cx: &App) -> AnyElement {
         cards::item_card(slot("item", id), item, &self.playback, cx)
             .map(|card| dressed(card, tile, cx))
-            .when_some(Item::of(item), |card, item| card.menu(opener(me, item)))
             .into_any_element()
-    }
-}
-
-fn opener(
-    me: &WeakEntity<Shelves>,
-    item: Item,
-) -> impl Fn(&MouseDownEvent, &mut Window, &mut App) + 'static {
-    let me = me.clone();
-
-    move |event: &MouseDownEvent, _: &mut Window, cx: &mut App| {
-        let at = event.position;
-        me.update(cx, |this, cx| {
-            this.menus.reset(cx);
-            this.context_menu = Some((item.clone(), at));
-            cx.notify();
-        })
-        .ok();
     }
 }
 

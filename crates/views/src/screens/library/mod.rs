@@ -7,7 +7,7 @@ use std::rc::Rc;
 use crate::chrome::tools::{self, Sliders};
 use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
 use crate::shared::confirm::{Confirm, Kind};
-use crate::shared::menus::{Item, new_playlist_menu};
+use crate::shared::menus::new_playlist_menu;
 use crate::shared::playlist_editor::{Edit, PlaylistEditor};
 
 use gpui::prelude::*;
@@ -66,8 +66,7 @@ const RECENT: Sort = Sort::Descending;
 #[derive(Clone)]
 enum LibraryMenu {
     Background,
-    Item(Item),
-    Track(Track),
+    Track(Box<Track>),
 }
 
 #[derive(Clone)]
@@ -979,8 +978,10 @@ impl LibraryView {
                     };
                     view.update(cx, |this, cx| {
                         this.tracks().read(cx).delegate().source().menu().reset(cx);
-                        this.context_menu =
-                            Some((LibraryMenu::Track(context.clone()), event.position));
+                        this.context_menu = Some((
+                            LibraryMenu::Track(Box::new(context.clone())),
+                            event.position,
+                        ));
                         cx.notify();
                     });
                 })
@@ -1009,20 +1010,8 @@ impl LibraryView {
                 .at(row, cx)
                 .map(|album| (display, album))
         });
-        let view = self.me.clone();
 
-        AlbumGrid::new("library-album", room, albums, self.playback.clone()).on_context(
-            move |album, position, cx| {
-                let Some(view) = view.upgrade() else {
-                    return;
-                };
-                view.update(cx, |this, cx| {
-                    this.context_menu =
-                        Some((LibraryMenu::Item(Item::Album(album.clone())), position));
-                    cx.notify();
-                });
-            },
-        )
+        AlbumGrid::new("library-album", room, albums, self.playback.clone())
     }
 
     fn playlist_card(
@@ -1033,7 +1022,6 @@ impl LibraryView {
         cx: &App,
     ) -> Option<AnyElement> {
         let playlist = self.playlists.read(cx).delegate().source().at(row, cx)?;
-        let view = self.me.clone();
         let build = match self.shelf.local() {
             true => cards::imported_playlist_card,
             false => cards::playlist_card,
@@ -1043,18 +1031,6 @@ impl LibraryView {
             build(("library-playlist", display), &playlist, &self.playback, cx)
                 .tile(card)
                 .flat()
-                .menu(move |event, _, cx| {
-                    let Some(view) = view.upgrade() else {
-                        return;
-                    };
-                    view.update(cx, |this, cx| {
-                        this.context_menu = Some((
-                            LibraryMenu::Item(Item::Playlist(playlist.clone())),
-                            event.position,
-                        ));
-                        cx.notify();
-                    });
-                })
                 .into_any_element(),
         )
     }
@@ -1067,25 +1043,11 @@ impl LibraryView {
         cx: &App,
     ) -> Option<AnyElement> {
         let artist = self.artists.read(cx).delegate().source().at(row, cx)?;
-        let context = artist.clone();
-        let view = self.me.clone();
 
         Some(
             cards::artist_card(("library-artist", display), &artist, &self.playback, cx)
                 .tile(card)
                 .flat()
-                .menu(move |event, _, cx| {
-                    let Some(view) = view.upgrade() else {
-                        return;
-                    };
-                    view.update(cx, |this, cx| {
-                        this.context_menu = Some((
-                            LibraryMenu::Item(Item::Artist(context.clone())),
-                            event.position,
-                        ));
-                        cx.notify();
-                    });
-                })
                 .into_any_element(),
         )
     }
@@ -1110,10 +1072,6 @@ impl Render for LibraryView {
 
         let context_menu = self.context_menu.clone().map(|(target, position)| {
             let menu = match target {
-                LibraryMenu::Item(item) => {
-                    let menus = self.tracks().read(cx).delegate().source().menu();
-                    item.menu(menus, self.playback.clone(), false, cx)
-                }
                 LibraryMenu::Track(track) => self
                     .tracks()
                     .read(cx)
