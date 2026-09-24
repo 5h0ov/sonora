@@ -492,6 +492,11 @@ impl Rail {
         self.glide.sync(&self.scroll);
     }
 
+    /// Puts the rail back at its first card at once, for when it starts showing other cards.
+    pub(crate) fn rewind(&self) {
+        self.glide.jump(&self.scroll, Point::default());
+    }
+
     /// The rail under its heading: the title with paging arrows beside it while the cards
     /// overflow, the kind pills when the rail has kinds to narrow by, and the cards in a
     /// sideways scroller. `notify` repaints the page holding the rail, which the arrows

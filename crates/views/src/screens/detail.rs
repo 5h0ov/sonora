@@ -550,7 +550,13 @@ impl DetailView {
                                 .on_click(move |_, _, cx| {
                                     opened
                                         .update(cx, |this, cx| {
+                                            if this.rail_tab == tab {
+                                                return;
+                                            }
                                             this.rail_tab = tab;
+                                            for rail in &this.rails {
+                                                rail.rewind();
+                                            }
                                             cx.notify();
                                         })
                                         .ok();
