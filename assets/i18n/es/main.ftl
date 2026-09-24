@@ -530,7 +530,7 @@ settings-controls-side-detail = El extremo de la barra de título donde se sitú
 settings-close-to-tray = Mantener en segundo plano
 settings-close-to-tray-detail = Mantiene a Sonora en ejecución y reproduciendo después de cerrar su ventana
 settings-tray-icon = Mostrar en la bandeja del sistema
-settings-tray-icon-detail = Muestra el icono de Sonora en la bandeja del sistema, o en la barra de menús en macOS
+settings-tray-icon-detail = Deja un icono para volver a Sonora mientras sigue en segundo plano
 settings-discord = Mostrar en Discord
 settings-discord-detail = Muestra la pista que estás escuchando en tu perfil de Discord
 settings-discord-name = Nombre del estado
@@ -818,6 +818,7 @@ tags-isrc = ISRC
 tags-comment = Comentario
 toast-tags-saved = Se guardaron las etiquetas de { $name }
 toast-tags-failed = No se pudieron guardar las etiquetas
+toast-tray-unavailable = No hay ninguna bandeja del sistema donde poner el icono
 
 nav-pin = Fijar
 toast-library-pin-failed = No se pudo actualizar el elemento fijado en Spotify.

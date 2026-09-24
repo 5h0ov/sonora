@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use ksni::blocking::{Handle, TrayMethods as _};
 use ksni::menu::{CheckmarkItem, MenuItem, StandardItem};
 use ksni::{Category, ToolTip};
@@ -12,8 +13,8 @@ const PNG: &[u8] = include_bytes!("../../../../assets/tray/sonora.png");
 const FLATPAK_INFO: &str = "/.flatpak-info";
 
 pub struct Icon {
-    /// What a fresh service is spawned from when the icon comes back. It only follows `show`
-    /// while the icon is out, since `Tray::place` publishes again right after the spawn.
+    /// What a fresh service is spawned from when the icon goes into the tray. It only follows
+    /// `show` while the icon is out, since `Tray::place` publishes again right after the spawn.
     item: Item,
     handle: Option<Handle<Item>>,
 }
@@ -45,23 +46,19 @@ impl Icon {
             icon_name: icon_name(sandboxed()),
             shown: None,
         };
-        let handle = spawn(item.clone())?;
-        Some(Self {
-            item,
-            handle: Some(handle),
-        })
+        Some(Self { item, handle: None })
     }
 
-    /// A host draws every item that is registered, so leaving the bus is the only way out.
-    pub fn placed(&mut self, placed: bool) {
-        if placed == self.handle.is_some() {
-            return;
-        }
-        match self.handle.take() {
+    /// Puts the icon in the tray, or takes it out. A host draws every item that is registered, so
+    /// leaving the bus is the only way out.
+    pub fn place(&mut self, placed: bool) -> Result<()> {
+        match (self.handle.take(), placed) {
             // the request is sent, not awaited: the item leaves the bus either way
-            Some(handle) => drop(handle.shutdown()),
-            None => self.handle = spawn(self.item.clone()),
+            (Some(handle), false) => drop(handle.shutdown()),
+            (None, true) => self.handle = Some(spawn(self.item.clone())?),
+            (handle, _) => self.handle = handle,
         }
+        Ok(())
     }
 
     pub fn show(&mut self, shown: &Shown) {
@@ -75,17 +72,13 @@ impl Icon {
     }
 }
 
-fn spawn(item: Item) -> Option<Handle<Item>> {
+fn spawn(item: Item) -> Result<Handle<Item>> {
     // A sandbox cannot own `org.kde.StatusNotifierItem-<pid>-<n>`, and a manifest cannot
     // grant it: flatpak's own-name wildcard only matches a `.*` suffix. The watcher
     // accepts the unique bus name instead.
-    match item.disable_dbus_name(sandboxed()).spawn() {
-        Ok(handle) => Some(handle),
-        Err(error) => {
-            log::warn!("tray: cannot reach the status notifier host: {error}");
-            None
-        }
-    }
+    item.disable_dbus_name(sandboxed())
+        .spawn()
+        .context("cannot reach the status notifier host")
 }
 
 #[derive(Clone)]

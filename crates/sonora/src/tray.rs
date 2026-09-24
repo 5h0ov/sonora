@@ -11,7 +11,7 @@ use gpui::http_client::{AsyncBody, HttpClient};
 use gpui::{App, AppContext as _, Context, Entity, Global, Task};
 use i18n::t;
 use router::Destination;
-use state::{PlaybackState, Repeat, Sonora};
+use state::{Outcome, PlaybackState, Repeat, Sonora, Toasts};
 use tokio::sync::mpsc::{self, UnboundedReceiver};
 
 #[cfg(any(target_os = "macos", windows))]
@@ -158,7 +158,7 @@ impl Tray {
         let mut tray = Self {
             icon,
             shown,
-            placed: true,
+            placed: false,
             cover: None,
             art: None,
             artwork: None,
@@ -171,14 +171,23 @@ impl Tray {
 
     /// Puts the icon in the tray, or takes it out. It follows `tray_icon`, but only while
     /// `close_to_tray` is on, which keeps the choice for when the app runs in the background again.
+    /// An icon that cannot be placed turns `tray_icon` off and says so.
     fn place(&mut self, cx: &mut Context<Self>) {
         let settings = Sonora::global(cx).settings.read(cx);
         let placed = settings.close_to_tray() && settings.tray_icon();
         if placed == self.placed {
             return;
         }
+        if let Err(error) = self.icon.place(placed) {
+            log::warn!("tray: cannot place the tray icon: {error:#}");
+            if placed {
+                Toasts::show(Outcome::Failed, "toast-tray-unavailable", cx);
+                let settings = Sonora::global(cx).settings.clone();
+                settings.update(cx, |settings, cx| settings.set_tray_icon(false, cx));
+                return;
+            }
+        }
         self.placed = placed;
-        self.icon.placed(placed);
         if !placed {
             return;
         }
