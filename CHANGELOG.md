@@ -15,6 +15,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Fixed
 
 - Loud tracks no longer flatten the top of the visualizer wave.
+- Secondary text and table headers in the Dark and Light themes are easier to read, and now
+  meet the WCAG AA contrast minimum, with or without the adaptive theme.
 
 ## [0.39.0] - 2026-09-24
 
