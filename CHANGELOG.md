@@ -18,9 +18,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Apple Music, Spotify, Deezer and OpenSubsonic servers that list one.
 - Album and playlist pages hold placeholder rows while their tracks load, as many as the
   release has when Sonora already knows the count, so the page no longer jumps when they arrive.
+- An album's menu has Add to playlist, which puts the whole album into a playlist and skips
+  the tracks it already holds.
 
 ### Changed
 
+- Album and playlist menus no longer list Open and Play, which clicking the card already does,
+  so they read like a song's menu.
 - Every album, playlist, artist and track card opens its right-click menu, including the
   album page's recommendations and an artist's Appears on row.
 - Album, playlist, library and history pages give their total length as 46m 15s, or 1h 2m past

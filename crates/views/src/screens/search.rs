@@ -976,11 +976,14 @@ impl Render for SearchView {
         let context_menu = self.context_menu.clone().map(|(target, position)| {
             let menu = match target {
                 HitMenu::Song(track) => self.track_menu.for_track(&track, cx),
-                HitMenu::Album(hit) => {
-                    album_menu(album_of(&hit, cx), self.playback.clone(), false, cx)
-                }
+                HitMenu::Album(hit) => album_menu(
+                    album_of(&hit, cx),
+                    self.playback.clone(),
+                    &self.track_menu,
+                    cx,
+                ),
                 HitMenu::Playlist(hit) => {
-                    playlist_menu(playlist_of(&hit, cx), self.playback.clone(), false, cx)
+                    playlist_menu(playlist_of(&hit, cx), self.playback.clone(), cx)
                 }
                 HitMenu::Artist(hit) => {
                     artist_menu(artist_of(&hit, cx), self.playback.clone(), false, cx)

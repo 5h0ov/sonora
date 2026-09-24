@@ -659,12 +659,13 @@ impl DetailView {
 
         Some(match header.kind {
             Collection::Album => {
-                album_menu(detail.album()?.clone(), self.playback.clone(), true, cx)
+                let menus = self.table.read(cx).delegate().source().menu();
+                album_menu(detail.album()?.clone(), self.playback.clone(), menus, cx)
             }
             Collection::Playlist => {
                 let saved = Sonora::global(cx).library.read(cx).playlist(&id).cloned();
                 let playlist = saved.or_else(|| detail.playlist().cloned())?;
-                playlist_menu(playlist, self.playback.clone(), true, cx)
+                playlist_menu(playlist, self.playback.clone(), cx)
             }
         })
     }

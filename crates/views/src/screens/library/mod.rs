@@ -7,7 +7,7 @@ use std::rc::Rc;
 use crate::chrome::tools::{self, Sliders};
 use crate::chrome::{Chrome, Searchable, Toolbar, Tooled};
 use crate::shared::confirm::{Confirm, Kind};
-use crate::shared::menus::new_playlist_menu;
+use crate::shared::menus::{ItemMenu, new_playlist_menu};
 use crate::shared::playlist_editor::{Edit, PlaylistEditor};
 
 use gpui::prelude::*;
@@ -19,8 +19,8 @@ use i18n::t;
 use music::{Shape, Track};
 use router::{Destination, LibraryTab, navigate};
 use state::{
-    AppSettings, Library, LibraryPart, LibraryState, Origin, Playback, PlaybackState, Scan, Shelf,
-    Sonora,
+    Addition, AppSettings, Library, LibraryPart, LibraryState, Origin, Playback, PlaybackState,
+    Scan, Shelf, Sonora,
 };
 use ui::{
     ActiveTheme as _, Button, Card, Deck, FilterChange, LEADING, Mode, Pinnable, Popovers, Popup,
@@ -263,7 +263,9 @@ impl LibraryView {
             TableState::new(delegate, cx).follow(scroll.clone())
         });
         let albums = cx.new(|cx| {
-            let source = AlbumSource::shelved(library.clone(), playback.clone(), shelf);
+            let playlist_scrollbar = cx.new(|_| Scrollbar::inset().watching(id));
+            let menu = ItemMenu::new(playlist_scrollbar, cx);
+            let source = AlbumSource::shelved(library.clone(), playback.clone(), menu, shelf);
             let mut delegate =
                 TableDelegate::new(source, width, cx).with_sort(AlbumField::AddedAt, RECENT, cx);
             let (layout, sorting) = stored(Section::Albums, cx);
@@ -416,7 +418,7 @@ impl LibraryView {
         self.context_menu = None;
         PlaylistEditor::open(
             Edit::Create {
-                tracks: Vec::new(),
+                addition: Addition::Tracks(Vec::new()),
                 shelf: self.shelf,
             },
             window,

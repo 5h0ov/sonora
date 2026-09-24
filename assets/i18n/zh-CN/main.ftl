@@ -142,16 +142,12 @@ menu-copy = 复制
 menu-paste = 粘贴
 menu-select-all = 全选
 menu-remove-from-queue = 从播放队列中移除
-menu-open-playlist = 打开播放列表
-menu-play-playlist = 播放该列表
 menu-rename-playlist = 重命名播放列表
 menu-delete-playlist = 删除播放列表
 menu-add-playlist-to-library = 添加到音乐库
 menu-remove-playlist-from-library = 从音乐库中移除
 menu-make-playlist-public = 设为公开
 menu-make-playlist-private = 设为私密
-menu-open-album = 打开专辑
-menu-play-album = 播放专辑
 menu-play-artist = 播放歌手
 
 # playlist editor
