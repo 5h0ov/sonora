@@ -1388,29 +1388,34 @@ impl Playback {
         self.repeat
     }
 
-    pub fn cycle_repeat(&mut self, cx: &mut Context<Self>) {
-        self.repeat = match self.repeat {
-            Repeat::Off => Repeat::All,
-            Repeat::All => Repeat::One,
-            Repeat::One => Repeat::Off,
-        };
-        let repeat = self.repeat;
+    /// Switches the repeat mode and remembers it in settings.
+    pub fn set_repeat(&mut self, repeat: Repeat, cx: &mut Context<Self>) {
+        if self.repeat == repeat {
+            return;
+        }
+        self.repeat = repeat;
         self.settings
             .update(cx, |settings, cx| settings.set_repeat(repeat, cx));
         cx.notify();
     }
 
+    pub fn cycle_repeat(&mut self, cx: &mut Context<Self>) {
+        let repeat = match self.repeat {
+            Repeat::Off => Repeat::All,
+            Repeat::All => Repeat::One,
+            Repeat::One => Repeat::Off,
+        };
+        self.set_repeat(repeat, cx);
+    }
+
     /// A binary on/off flip for surfaces (tray, dock menu) that do not fit the three-way
     /// cycle the player bar's button drives; `One` counts as on and flips straight to `Off`.
     pub fn toggle_repeat(&mut self, cx: &mut Context<Self>) {
-        self.repeat = match self.repeat {
+        let repeat = match self.repeat {
             Repeat::Off => Repeat::All,
             Repeat::All | Repeat::One => Repeat::Off,
         };
-        let repeat = self.repeat;
-        self.settings
-            .update(cx, |settings, cx| settings.set_repeat(repeat, cx));
-        cx.notify();
+        self.set_repeat(repeat, cx);
     }
 
     /// Decides what follows a track that ended: the same one on repeat-one, the queue's start

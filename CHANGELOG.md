@@ -20,6 +20,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   release has when Sonora already knows the count, so the page no longer jumps when they arrive.
 - An album's menu has Add to playlist, which puts the whole album into a playlist and skips
   the tracks it already holds.
+- On Linux the desktop media widget shows Sonora's icon and has shuffle and repeat buttons that
+  stay in step with the player bar.
 
 ### Changed
 
@@ -35,6 +37,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Loud tracks no longer flatten the top of the visualizer wave.
 - Secondary text and table headers in the Dark and Light themes are easier to read, and now
   meet the WCAG AA contrast minimum, with or without the adaptive theme.
+- On Linux, playerctl and the desktop media widget read Sonora's real volume instead of always
+  seeing 100%.
 
 ## [0.39.0] - 2026-09-24
 
