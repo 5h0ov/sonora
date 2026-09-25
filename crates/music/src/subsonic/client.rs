@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::Duration;
 
 use anyhow::{Context as _, Result};
@@ -13,13 +13,17 @@ use crate::escape;
 use crate::subsonic::auth::Signature;
 use crate::subsonic::wire;
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem, GenreSection,
-    HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile,
-    distinct_covers,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem,
+    GenreSection, HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS,
+    SavedArtist, Track, UserProfile, distinct_covers,
 };
 
 const PORTRAIT_LIMIT: usize = 24;
 const RADIO_COUNT: i32 = 25;
+/// How many similar artists lend their albums to a thin rail, and how many albums each
+/// lends.
+const SIMILAR_ARTISTS: usize = 6;
+const SIMILAR_RELEASES: usize = 2;
 const HOME_SONGS: i32 = 25;
 const HOME_ALBUMS: i32 = 12;
 const LIBRARY_PAGE: i32 = 500;
@@ -126,7 +130,7 @@ impl SubsonicClient {
                 0 => String::new(),
                 _ => year.to_string(),
             },
-            label: String::new(),
+            label: wire::labels(detail.record_labels.as_deref()),
             copyrights: Vec::new(),
             added_at: None,
         }
@@ -158,6 +162,84 @@ impl SubsonicClient {
             return Some(url.to_owned());
         }
         self.cover_large(art, fallback)
+    }
+
+    /// Up to `SUGGESTIONS` of the artist's own albums without the album the page is already
+    /// showing.
+    async fn more_from_artist(&self, album_id: &str, artist_id: &str) -> Result<Vec<Album>> {
+        let detail = self
+            .client
+            .get_artist(artist_id)
+            .await
+            .with_context(|| format!("cannot load more from artist {artist_id}"))?;
+        Ok(detail
+            .album
+            .into_iter()
+            .map(|album| self.convert_album(album))
+            .filter(|album| album.id != album_id)
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
+    /// Up to `SUGGESTIONS` artists the server lists as similar, for the rail's artists tab.
+    async fn similar_artists(&self, artist_id: &str) -> Result<Vec<SavedArtist>> {
+        let info = self
+            .client
+            .get_artist_info2(artist_id, Some(SUGGESTIONS as i32), None)
+            .await
+            .with_context(|| format!("cannot load artists similar to {artist_id}"))?;
+        Ok(info
+            .similar_artist
+            .into_iter()
+            .filter(|artist| !artist.name.is_empty())
+            .map(|artist| SavedArtist {
+                cover: self.artist_cover(
+                    artist.cover_art.as_deref(),
+                    artist.artist_image_url.as_deref(),
+                    &artist.id,
+                ),
+                id: artist.id.clone(),
+                name: artist.name.clone(),
+                added_at: None,
+            })
+            .take(SUGGESTIONS)
+            .collect())
+    }
+
+    /// A few albums each from the first similar artists, skipping the page's own album:
+    /// the cross-artist half of the rail. One artist failing only shortens the rail.
+    async fn similar_releases(&self, album_id: &str, similar: &[SavedArtist]) -> Vec<Album> {
+        let mut tasks = JoinSet::new();
+        for artist in similar.iter().take(SIMILAR_ARTISTS) {
+            let client = self.clone();
+            let album_id = album_id.to_owned();
+            let artist_id = artist.id.clone();
+            tasks.spawn(async move {
+                let detail = match client.client.get_artist(&artist_id).await {
+                    Ok(detail) => detail,
+                    Err(error) => {
+                        log::warn!("subsonic: cannot load similar artist {artist_id}: {error:#}");
+                        return None;
+                    }
+                };
+                Some(
+                    detail
+                        .album
+                        .into_iter()
+                        .map(|album| client.convert_album(album))
+                        .filter(|album| album.id != album_id)
+                        .take(SIMILAR_RELEASES)
+                        .collect::<Vec<Album>>(),
+                )
+            });
+        }
+        let mut releases = Vec::new();
+        while let Some(read) = tasks.join_next().await {
+            if let Ok(Some(read)) = read {
+                releases.extend(read);
+            }
+        }
+        releases
     }
 }
 
@@ -515,6 +597,52 @@ impl MusicApi for SubsonicClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album(album_id).await?.tracks)
+    }
+
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let Some(artist_id) = artist_id else {
+            return Ok(AlbumCatalogue::default());
+        };
+        let (more_by, similar) = tokio::join!(
+            self.more_from_artist(album_id, artist_id),
+            self.similar_artists(artist_id),
+        );
+        // Nothing read at all is an error rather than an empty rail, so the catalog does not
+        // keep the empty answer for the rest of the session.
+        let (more_by, similar) = match (more_by, similar) {
+            (Err(error), Err(_)) => return Err(error.context("cannot read any recommendations")),
+            pair => pair,
+        };
+        if let Err(error) = &more_by {
+            log::warn!("subsonic: cannot read more from this artist: {error:#}");
+        }
+        if let Err(error) = &similar {
+            log::warn!("subsonic: cannot read similar artists: {error:#}");
+        }
+        let (more_by, similar) = (more_by.unwrap_or_default(), similar.unwrap_or_default());
+        let mut seen = HashSet::new();
+        let mut liked: Vec<Album> = more_by
+            .into_iter()
+            .filter(|album| seen.insert(album.id.clone()))
+            .collect();
+        if liked.len() < SUGGESTIONS && !similar.is_empty() {
+            for album in self.similar_releases(album_id, &similar).await {
+                if liked.len() >= SUGGESTIONS {
+                    break;
+                }
+                if seen.insert(album.id.clone()) {
+                    liked.push(album);
+                }
+            }
+        }
+        Ok(AlbumCatalogue {
+            also_like: liked,
+            similar,
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {

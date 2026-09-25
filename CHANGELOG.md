@@ -7,6 +7,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The visualizer can ignore Sonora's volume. Turn on Ignore volume under Fullscreen in
+  Appearance settings and the bars stay full height when you turn the music down.
+- Album pages now carry recommendations wherever the provider offers them: related
+  releases and similar artists under Albums and Artists tabs, and Apple Music artists
+  list what they appear on.
+- Album pages print the release's copyright line or record label under the tracks, on
+  Apple Music, Spotify, Deezer and OpenSubsonic servers that list one.
+- Album and playlist pages hold placeholder rows while their tracks load, as many as the
+  release has when Sonora already knows the count, so the page no longer jumps when they arrive.
+- An album's menu has Add to playlist, which puts the whole album into a playlist and skips
+  the tracks it already holds.
+
+### Changed
+
+- Album and playlist menus no longer list Open and Play, which clicking the card already does,
+  so they read like a song's menu.
+- Every album, playlist, artist and track card opens its right-click menu, including the
+  album page's recommendations and an artist's Appears on row.
+- Album, playlist, library and history pages give their total length as 46m 15s, or 1h 2m past
+  an hour, rather than a clock reading like 46:15.
+
+### Fixed
+
+- Loud tracks no longer flatten the top of the visualizer wave.
+- Secondary text and table headers in the Dark and Light themes are easier to read, and now
+  meet the WCAG AA contrast minimum, with or without the adaptive theme.
+
 ## [0.39.0] - 2026-09-24
 
 ### Added

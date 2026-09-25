@@ -158,8 +158,6 @@ menu-copy = Скопіювати
 menu-paste = Вставити
 menu-select-all = Вибрати все
 menu-remove-from-queue = Вилучити з черги
-menu-open-playlist = Відкрити плейлист
-menu-play-playlist = Відтворити плейлист
 menu-rename-playlist = Перейменувати плейлист
 menu-delete-playlist = Видалити плейлист
 menu-add-playlist-to-library = Додати до медіатеки
@@ -178,8 +176,6 @@ menu-library-remove-tracks = { $count ->
 }
 menu-make-playlist-public = Зробити публічним
 menu-make-playlist-private = Зробити приватним
-menu-open-album = Відкрити альбом
-menu-play-album = Відтворити альбом
 menu-play-artist = Відтворити виконавця
 
 # playlist editor
@@ -364,6 +360,10 @@ artist-filter-all = Усі
 artist-filter-albums = Альбоми
 artist-filter-singles = Сингли
 artist-filter-eps = EP
+artist-appears-on = З'являється в
+album-also-like = Вам також може сподобатися
+album-tab-albums = Альбоми
+album-tab-artists = Артисти
 
 # user profile page
 user-eyebrow = Профіль

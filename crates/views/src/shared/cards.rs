@@ -7,6 +7,7 @@ use state::{Origin, Playback, PlaybackState};
 use ui::{ActiveTheme as _, Card, InlineLinks, Pinnable, Text, Theme};
 
 use crate::shared::cells;
+use crate::shared::menus::{CardMenu, Item};
 use crate::shared::pins::Pinned as _;
 
 const BULLET: SharedString = SharedString::new_static("·");
@@ -47,6 +48,10 @@ pub(crate) fn album_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Album(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Album(album.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
 }
 
@@ -74,12 +79,16 @@ pub(crate) fn playlist_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Playlist(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Playlist(playlist.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
 }
 
-/// The card of a track with nothing wired to play it: name, cover, explicit mark and pin,
-/// tinted while it is the one playing. Whoever lists it adds the caption and the play and
-/// press it wants; `track_status` tells them where playback stands.
+/// The card of a track with nothing wired to play it: name, cover, explicit mark, pin and the
+/// shared context menu, tinted while it is the one playing. Whoever lists it adds the caption
+/// and the play and press it wants, and `track_status` tells them where playback stands.
 pub(crate) fn track_card(
     id: impl Into<ElementId>,
     track: &Track,
@@ -98,6 +107,10 @@ pub(crate) fn track_card(
         .tint(tint)
         .hint()
         .when(track.explicit, Card::explicit)
+        .menu(CardMenu::opener(
+            Item::Track(track.clone()),
+            playback.clone(),
+        ))
         .when_some(track.pin(), Pinnable::pin)
 }
 
@@ -178,6 +191,68 @@ pub(crate) fn genre_card(id: impl Into<ElementId>, genre: &Genre) -> Card {
         .fallback("icons/music.svg")
         .weight(FontWeight::SEMIBOLD)
         .press(move |_, _, cx| navigate(Destination::Genre(opened.clone()), cx))
+}
+
+/// Which releases a release listing keeps: everything, or one kind of release.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ReleaseFilter {
+    All,
+    Albums,
+    Singles,
+    Eps,
+}
+
+impl ReleaseFilter {
+    const ALL: [Self; 4] = [Self::All, Self::Singles, Self::Albums, Self::Eps];
+
+    /// The element id of the filter's pill.
+    pub(crate) fn id(self) -> &'static str {
+        match self {
+            Self::All => "release-filter-all",
+            Self::Albums => "release-filter-albums",
+            Self::Singles => "release-filter-singles",
+            Self::Eps => "release-filter-eps",
+        }
+    }
+
+    /// The pill's label, resolved for the active language.
+    pub(crate) fn label(self) -> SharedString {
+        match self {
+            Self::All => t!("artist-filter-all"),
+            Self::Albums => t!("artist-filter-albums"),
+            Self::Singles => t!("artist-filter-singles"),
+            Self::Eps => t!("artist-filter-eps"),
+        }
+    }
+
+    /// Whether a release of this kind passes the filter.
+    pub(crate) fn matches(self, kind: ReleaseType) -> bool {
+        self == Self::All
+            || matches!(
+                (self, kind),
+                (Self::Albums, ReleaseType::Album)
+                    | (Self::Singles, ReleaseType::Single)
+                    | (Self::Eps, ReleaseType::Ep)
+            )
+    }
+}
+
+/// The filters a listing earns: all of them, and one per kind the listing holds. A local
+/// listing has none, since its files carry no release kinds to split by.
+pub(crate) fn release_filters(
+    local: bool,
+    releases: impl IntoIterator<Item = ReleaseType>,
+) -> Vec<ReleaseFilter> {
+    if local {
+        return Vec::new();
+    }
+    let releases = releases.into_iter().collect::<Vec<_>>();
+    ReleaseFilter::ALL
+        .into_iter()
+        .filter(|filter| {
+            *filter == ReleaseFilter::All || releases.iter().any(|release| filter.matches(*release))
+        })
+        .collect()
 }
 
 /// A shelf item as one row of a list: `item_card` at the plain weight of a listed row, and
@@ -319,5 +394,31 @@ pub(crate) fn artist_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Artist(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Artist(artist.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_releases_have_no_filters() {
+        assert!(release_filters(true, [ReleaseType::Album]).is_empty());
+    }
+
+    #[test]
+    fn listed_releases_only_show_populated_filters() {
+        assert_eq!(
+            release_filters(false, [ReleaseType::Album, ReleaseType::Single]),
+            [
+                ReleaseFilter::All,
+                ReleaseFilter::Singles,
+                ReleaseFilter::Albums,
+            ]
+        );
+    }
 }

@@ -153,8 +153,6 @@ menu-copy = Copy
 menu-paste = Paste
 menu-select-all = Select all
 menu-remove-from-queue = Remove from queue
-menu-open-playlist = Open playlist
-menu-play-playlist = Play playlist
 menu-rename-playlist = Rename playlist
 menu-delete-playlist = Delete playlist
 menu-add-playlist-to-library = Add to Library
@@ -171,8 +169,6 @@ menu-library-remove-tracks = { $count ->
 }
 menu-make-playlist-public = Make public
 menu-make-playlist-private = Make private
-menu-open-album = Open album
-menu-play-album = Play album
 menu-play-artist = Play artist
 
 # playlist editor
@@ -352,6 +348,11 @@ artist-filter-all = All
 artist-filter-albums = Albums
 artist-filter-singles = Singles
 artist-filter-eps = EPs
+artist-appears-on = Appears on
+album-also-like = You might also like
+album-tab-albums = Albums
+album-tab-artists = Artists
+album-label = ℗ { $label }
 
 # user profile page
 user-eyebrow = Profile
@@ -461,6 +462,11 @@ count-tracks =
        *[other] { $count } tracks
     }
 
+# running times
+runtime-seconds = { $seconds }s
+runtime-minutes = { $minutes }m { $seconds }s
+runtime-hours = { $hours }h { $minutes }m
+
 # dates
 date-just-now = Just now
 date-minute-ago = A minute ago
@@ -507,6 +513,8 @@ settings-visualizer-style-none = Off
 settings-visualizer-style-bars = Bars
 settings-visualizer-style-wave = Wave
 settings-visualizer-style-both = Bars and wave
+settings-visualizer-absolute = Ignore volume
+settings-visualizer-absolute-detail = Draw the spectrum at the track's own level, however loud Sonora plays it
 settings-fullscreen-controls-autohide = Hide fullscreen controls
 settings-fullscreen-controls-autohide-detail = Fade out playback controls when fullscreen is inactive
 settings-icons = Icon pack

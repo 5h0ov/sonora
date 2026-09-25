@@ -142,16 +142,12 @@ menu-copy = Salin
 menu-paste = Tempel
 menu-select-all = Pilih semua
 menu-remove-from-queue = Hapus dari antrean
-menu-open-playlist = Buka playlist
-menu-play-playlist = Putar playlist
 menu-rename-playlist = Ganti nama playlist
 menu-delete-playlist = Hapus playlist
 menu-add-playlist-to-library = Simpan ke Koleksi
 menu-remove-playlist-from-library = Hapus dari Koleksi
 menu-make-playlist-public = Jadikan publik
 menu-make-playlist-private = Jadikan privat
-menu-open-album = Buka album
-menu-play-album = Putar album
 menu-play-artist = Putar artis
 
 # playlist editor

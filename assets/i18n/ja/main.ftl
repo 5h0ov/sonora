@@ -121,16 +121,12 @@ menu-copy = コピー
 menu-paste = 貼り付け
 menu-select-all = すべて選択
 menu-remove-from-queue = 再生キューから削除
-menu-open-playlist = プレイリストを開く
-menu-play-playlist = プレイリストを再生
 menu-rename-playlist = プレイリストの名前を変更
 menu-delete-playlist = プレイリストを削除
 menu-add-playlist-to-library = ライブラリに追加
 menu-remove-playlist-from-library = ライブラリから削除
 menu-make-playlist-public = 公開する
 menu-make-playlist-private = 非公開にする
-menu-open-album = アルバムを開く
-menu-play-album = アルバムを再生
 menu-play-artist = アーティストを再生
 
 # playlist editor

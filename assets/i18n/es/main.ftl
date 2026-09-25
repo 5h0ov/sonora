@@ -144,8 +144,6 @@ menu-copy = Copiar
 menu-paste = Pegar
 menu-select-all = Seleccionar todo
 menu-remove-from-queue = Quitar de la cola
-menu-open-playlist = Abrir lista de reproducción
-menu-play-playlist = Reproducir lista
 menu-rename-playlist = Renombrar lista
 menu-delete-playlist = Eliminar lista
 menu-add-playlist-to-library = Añadir a la biblioteca
@@ -162,8 +160,6 @@ menu-library-remove-tracks = { $count ->
 }
 menu-make-playlist-public = Hacer pública
 menu-make-playlist-private = Hacer privada
-menu-open-album = Abrir álbum
-menu-play-album = Reproducir álbum
 menu-play-artist = Reproducir artista
 
 # playlist editor

@@ -152,8 +152,6 @@ menu-copy = Kopjo
 menu-paste = Ngjit
 menu-select-all = Përzgjidh të gjitha
 menu-remove-from-queue = Hiq nga radha
-menu-open-playlist = Hap listën e luajtjes
-menu-play-playlist = Luaj listën e luajtjes
 menu-rename-playlist = Riemërto listën e luajtjes
 menu-delete-playlist = Fshi listën e luajtjes
 menu-add-playlist-to-library = Shto te Biblioteka
@@ -170,8 +168,6 @@ menu-library-remove-tracks = { $count ->
 }
 menu-make-playlist-public = Bëje publike
 menu-make-playlist-private = Bëje private
-menu-open-album = Hap albumin
-menu-play-album = Luaj albumin
 menu-play-artist = Luaj artistin
 
 # playlist editor

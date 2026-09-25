@@ -121,16 +121,12 @@ menu-copy = Kopyala
 menu-paste = Yapıştır
 menu-select-all = Tümünü seç
 menu-remove-from-queue = Sıradan çıkar
-menu-open-playlist = Çalma listesini aç
-menu-play-playlist = Çalma listesini çal
 menu-rename-playlist = Çalma listesini yeniden adlandır
 menu-delete-playlist = Çalma listesini sil
 menu-add-playlist-to-library = Kitaplığa ekle
 menu-remove-playlist-from-library = Kitaplıktan çıkar
 menu-make-playlist-public = Herkese açık yap
 menu-make-playlist-private = Gizli yap
-menu-open-album = Albümü aç
-menu-play-album = Albümü çal
 menu-play-artist = Sanatçıyı çal
 
 # playlist editor

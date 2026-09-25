@@ -6,7 +6,7 @@ use gpui::{
     Window, div, relative,
 };
 use i18n::t;
-use music::Track;
+use music::{Album, Track};
 use state::{Origin, Playback, PlaybackState};
 use ui::{
     ActiveTheme as _, Artwork, Button, ExplicitBadge, LEADING, Pin, Pinnable as _, TableState,
@@ -14,6 +14,30 @@ use ui::{
 };
 
 use crate::shared::tracks::{self, TrackSource};
+
+/// One copyright line, with a © in front unless the provider already led it with © or ℗.
+pub(crate) fn copyright_notice(text: &str) -> SharedString {
+    match text.starts_with(['©', '℗']) {
+        true => SharedString::from(text.to_owned()),
+        false => t!("song-copyright", notice = text),
+    }
+}
+
+/// The notices an album page prints under its tracks: the provider's copyright lines, or the
+/// label behind ℗ when the provider names only that. Empty when it names neither.
+pub(crate) fn copyright_notices(album: &Album) -> Vec<SharedString> {
+    if !album.copyrights.is_empty() {
+        return album
+            .copyrights
+            .iter()
+            .map(|line| copyright_notice(line))
+            .collect();
+    }
+    match album.label.trim() {
+        "" => Vec::new(),
+        label => vec![t!("album-label", label = label)],
+    }
+}
 
 pub(crate) fn release_date_label(value: &str) -> SharedString {
     let parts: Vec<_> = value.split('-').collect();

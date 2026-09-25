@@ -142,16 +142,12 @@ menu-copy = Copier
 menu-paste = Coller
 menu-select-all = Tout sélectionner
 menu-remove-from-queue = Retirer de la file d'attente
-menu-open-playlist = Ouvrir la playlist
-menu-play-playlist = Lire la playlist
 menu-rename-playlist = Renommer la playlist
 menu-delete-playlist = Supprimer la playlist
 menu-add-playlist-to-library = Ajouter à la bibliothèque
 menu-remove-playlist-from-library = Retirer de la bibliothèque
 menu-make-playlist-public = Rendre publique
 menu-make-playlist-private = Rendre privée
-menu-open-album = Ouvrir l'album
-menu-play-album = Lire l'album
 menu-play-artist = Lire l'artiste
 
 # playlist editor
