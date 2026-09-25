@@ -85,6 +85,8 @@ struct Installed {
 
 impl Global for Installed {}
 
+/// Sets up the tray icon and its menu. Returns whether Sonora may keep running once its window
+/// closes, which it only does when the desktop has a tray to bring it back from.
 pub fn install(show: impl Fn(&mut App) + 'static, cx: &mut App) -> bool {
     let (sender, receiver) = mpsc::unbounded_channel();
     let Some(icon) = Icon::new(sender) else {
@@ -92,7 +94,7 @@ pub fn install(show: impl Fn(&mut App) + 'static, cx: &mut App) -> bool {
     };
     let tray = cx.new(|cx| Tray::new(icon, receiver, show, cx));
     cx.set_global(Installed { _tray: tray });
-    true
+    Icon::hosted()
 }
 
 pub struct Tray {

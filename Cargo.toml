@@ -78,6 +78,7 @@ jiff = { version = "0.2", default-features = false, features = [
 ] }
 kakasi = "0.1"
 ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 libc = "0.2"
 lofty = "0.25"
 log = "0.4"

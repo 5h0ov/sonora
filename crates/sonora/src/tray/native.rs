@@ -114,6 +114,11 @@ impl Icon {
         })
     }
 
+    /// Whether there is a tray to bring Sonora back from, which Windows and macOS always have.
+    pub fn hosted() -> bool {
+        true
+    }
+
     /// Puts the icon in the tray, or takes it out. The status item stays alive once built, so the
     /// menu and its handlers survive a round trip.
     pub fn place(&mut self, placed: bool) -> Result<()> {

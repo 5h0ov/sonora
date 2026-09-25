@@ -11,6 +11,7 @@ const ICON_NAME: &str = "sonora";
 const PNG: &[u8] = include_bytes!("../../../../assets/tray/sonora.png");
 /// Flatpak writes this file into every sandbox it starts.
 const FLATPAK_INFO: &str = "/.flatpak-info";
+const WATCHER: &str = "org.kde.StatusNotifierWatcher";
 
 pub struct Icon {
     /// What a fresh service is spawned from when the icon goes into the tray. It only follows
@@ -47,6 +48,18 @@ impl Icon {
             shown: None,
         };
         Some(Self { item, handle: None })
+    }
+
+    /// Whether a status notifier watcher is on the session bus, so there is a tray to bring Sonora
+    /// back from. It asks the bus, not the watcher, so it works while the icon is out.
+    pub fn hosted() -> bool {
+        match watched() {
+            Ok(hosted) => hosted,
+            Err(error) => {
+                log::warn!("tray: cannot ask the session bus for a tray: {error:#}");
+                false
+            }
+        }
     }
 
     /// Puts the icon in the tray, or takes it out. A host draws every item that is registered, so
@@ -180,6 +193,15 @@ impl ksni::Tray for Item {
             self.entry(&shown.quit, Event::Quit),
         ]
     }
+}
+
+fn watched() -> Result<bool> {
+    let bus = zbus::blocking::Connection::session().context("cannot reach the session bus")?;
+    let name = zbus::names::BusName::try_from(WATCHER).context("cannot name the watcher")?;
+    zbus::blocking::fdo::DBusProxy::new(&bus)
+        .context("cannot reach the bus daemon")?
+        .name_has_owner(name)
+        .context("cannot ask for the watcher")
 }
 
 fn sandboxed() -> bool {
