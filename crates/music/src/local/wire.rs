@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
@@ -44,6 +45,21 @@ const ARTIST_NAMES: &[&str] = &[
     "cover.png",
     "cover.webp",
 ];
+
+/// What separates one artist from the next in a track's credit, matched without regard to case.
+/// An ampersand is left alone because it is as often part of one name as a join of two.
+const CREDIT_MARKS: &[&str] = &[
+    " featuring ",
+    " feat. ",
+    " feat ",
+    " ft. ",
+    " ft ",
+    ",",
+    ";",
+];
+
+/// The credit of an album whose tracks name no album artist and share no artist either.
+const VARIOUS_ARTISTS: &str = "Various Artists";
 
 const PLAYABLE_EXTENSIONS: &[&str] = &[
     "mp3", "flac", "m4a", "mp4", "aac", "ogg", "oga", "wav", "opus", "webm", "mka", "wv", "ape",
@@ -357,15 +373,17 @@ pub fn modified_at(path: &Path) -> Option<i64> {
     }
 }
 
-/// Reads one file into a track, the album artist it belongs under, and the year its tag
-/// claims. The year comes out of the same read rather than a second one: it is what an album
-/// is dated by, and opening every album's first track again costs a round trip each on a share.
+/// Reads one file into a track, the album artist its tags name, and the year its tag claims.
+/// A file naming an album artist joins that artist's album of the same name. One that names none
+/// joins the album of the same name in its own folder, so featured artists never split an album.
+/// The year comes out of the same read because it is what an album is dated by, and opening every
+/// album's first track again costs a round trip each on a share.
 pub fn track_from_file(
     path: &Path,
     artist_hint: Option<&str>,
     album_hint: Option<&str>,
     cache_dir: &Path,
-) -> Option<(Track, String, Option<i32>)> {
+) -> Option<(Track, Option<String>, Option<i32>)> {
     let tagged = Probe::open(path).ok().and_then(|file| file.read().ok());
     let tag = tagged
         .as_ref()
@@ -415,8 +433,7 @@ pub fn track_from_file(
             .map(std::borrow::Cow::Borrowed),
     )
     .or_else(|| fallback.as_ref().and_then(|fb| fb.album_artist.clone()))
-    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()))
-    .unwrap_or_else(|| artist.clone());
+    .or_else(|| lenient.as_ref().and_then(|l| l.album_artist.clone()));
 
     let album_name = clean(tag.and_then(Accessor::album))
         .or_else(|| fallback.as_ref().and_then(|fb| fb.album.clone()))
@@ -460,7 +477,12 @@ pub fn track_from_file(
         cover = cache_image_data(data, mime, cache_dir);
     }
 
-    let album_id = (!album_name.is_empty()).then(|| album_id(&album_artist, &album_name));
+    let album_id = (!album_name.is_empty()).then(|| {
+        let owner = album_artist
+            .clone()
+            .unwrap_or_else(|| album_folder(path).to_string_lossy().into_owned());
+        album_id(&owner, &album_name)
+    });
     let year = tag
         .and_then(|tag| tag.date())
         .map(|date| date.year as i32)
@@ -495,10 +517,12 @@ pub fn track_from_file(
     ))
 }
 
-pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {
+/// Builds the album `tracks` were grouped under. `id` is the one the tracks carry, since it is
+/// keyed by folder rather than by `artist` when the files name no album artist.
+pub fn album_from_tracks(id: &str, name: &str, artist: &str, tracks: &[Track], year: i32) -> Album {
     let cover = tracks.iter().find_map(|track| track.cover.clone());
     Album {
-        id: album_id(artist, name),
+        id: id.to_owned(),
         name: name.to_owned(),
         artists: artist.to_owned(),
         artist_refs: vec![artist_ref(artist)],
@@ -511,6 +535,73 @@ pub fn album_from_tracks(name: &str, artist: &str, tracks: &[Track], year: i32) 
         label: String::new(),
         copyrights: Vec::new(),
         added_at: tracks.iter().filter_map(|track| track.added_at).max(),
+    }
+}
+
+/// The artists every track credits, in the order the first track lists them, for an album whose
+/// files name no album artist. Credits split on commas, semicolons and featuring marks, and
+/// tracks that share nobody are credited to various artists.
+pub fn shared_artists(tracks: &[Track]) -> String {
+    let Some((first, rest)) = tracks.split_first() else {
+        return VARIOUS_ARTISTS.to_owned();
+    };
+    let others: Vec<HashSet<String>> = rest
+        .iter()
+        .map(|track| {
+            credited(&track.artists)
+                .iter()
+                .map(|name| normalize(name))
+                .collect()
+        })
+        .collect();
+    let shared: Vec<String> = credited(&first.artists)
+        .into_iter()
+        .filter(|name| {
+            others
+                .iter()
+                .all(|credits| credits.contains(&normalize(name)))
+        })
+        .collect();
+    match shared.is_empty() {
+        true => VARIOUS_ARTISTS.to_owned(),
+        false => shared.join(", "),
+    }
+}
+
+/// Splits one track's artist credit into the names it lists.
+fn credited(artists: &str) -> Vec<String> {
+    let mut text = format!(" {} ", artists.replace(['(', ')', '[', ']'], " "));
+    for mark in CREDIT_MARKS {
+        while let Some(at) = text.to_ascii_lowercase().find(mark) {
+            text.replace_range(at..at + mark.len(), "\n");
+        }
+    }
+    text.split('\n')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The folder an untagged track's album is keyed by. A disc folder such as `CD1` or `Disc 2`
+/// stands for the album folder above it, so a multi-disc rip still makes one album.
+fn album_folder(path: &Path) -> &Path {
+    let Some(dir) = path.parent() else {
+        return path;
+    };
+    let name = dir
+        .file_name()
+        .map(|name| name.to_string_lossy().to_ascii_lowercase())
+        .unwrap_or_default();
+    let disc = ["cd", "disc", "disk"].iter().any(|prefix| {
+        name.strip_prefix(prefix).is_some_and(|rest| {
+            let rest = rest.trim_start_matches([' ', '_', '-', '.']);
+            !rest.is_empty() && rest.chars().all(|c| c.is_ascii_digit())
+        })
+    });
+    match disc {
+        true => dir.parent().unwrap_or(dir),
+        false => dir,
     }
 }
 
@@ -723,7 +814,7 @@ mod tests {
         older.added_at = Some(1_000);
         newer.added_at = Some(2_000);
 
-        let album = album_from_tracks("Album", "Artist", &[older, newer], 2026);
+        let album = album_from_tracks("id", "Album", "Artist", &[older, newer], 2026);
 
         assert_eq!(album.added_at, Some(2_000));
         std::fs::remove_dir_all(&dir).ok();

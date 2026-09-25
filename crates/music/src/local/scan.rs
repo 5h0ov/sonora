@@ -48,7 +48,8 @@ pub(super) struct Reading {
     pub mtime: i64,
     pub size: u64,
     pub track: Track,
-    pub album_artist: String,
+    /// The album artist the tags name, `None` when they name none.
+    pub album_artist: Option<String>,
     /// What the tag said the year was, kept so dating an album never reopens a file.
     pub year: Option<i32>,
     /// Whether the file was opened this time round, so its row has to be written back.
@@ -110,7 +111,7 @@ pub fn scan(roots: &[PathBuf], cache_dir: &Path, index: &Index) -> Scanned {
     let changes = Changes::between(&remembered, &readings, &looks, &reached);
     let opened = readings.iter().filter(|reading| reading.fresh).count();
     scanned.portraits = name_portraits(&looks, &readings);
-    let parsed: Vec<(Track, String, Option<i32>)> = readings
+    let parsed: Vec<(Track, Option<String>, Option<i32>)> = readings
         .into_iter()
         .map(|reading| (reading.track, reading.album_artist, reading.year))
         .collect();
@@ -175,7 +176,7 @@ fn read_one(
     path: &Path,
     roots: &[PathBuf],
     cache_dir: &Path,
-) -> Option<(Track, String, Option<i32>)> {
+) -> Option<(Track, Option<String>, Option<i32>)> {
     let artist_hint = path
         .parent()
         .and_then(Path::parent)
@@ -295,7 +296,9 @@ fn name_portraits(looks: &[Look], readings: &[Reading]) -> HashMap<String, Strin
     portraits
 }
 
-fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
+/// Groups tracks into albums by the id each one carries, in scan order. An album is credited to
+/// the first album artist its tags name, or to the artists all of its tracks share.
+fn group_albums(parsed: &[(Track, Option<String>, Option<i32>)]) -> Vec<Album> {
     let mut order: Vec<String> = Vec::new();
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
 
@@ -316,11 +319,20 @@ fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
             let mut tracks: Vec<Track> = indices.iter().map(|&i| parsed[i].0.clone()).collect();
             tracks.sort_by_key(|track| (track.disc_number, track.track_number, track.name.clone()));
 
-            let album_artist = parsed[indices[0]].1.clone();
+            let album_artist = indices
+                .iter()
+                .find_map(|&i| parsed[i].1.clone())
+                .unwrap_or_else(|| wire::shared_artists(&tracks));
             let name = tracks[0].album.clone();
             let year = album_year(indices, parsed);
 
-            Some(wire::album_from_tracks(&name, &album_artist, &tracks, year))
+            Some(wire::album_from_tracks(
+                &id,
+                &name,
+                &album_artist,
+                &tracks,
+                year,
+            ))
         })
         .collect()
 }
@@ -328,7 +340,7 @@ fn group_albums(parsed: &[(Track, String, Option<i32>)]) -> Vec<Album> {
 /// The year an album is dated by: the first year any of its tracks carries, and the year in its
 /// folder's name when none of them does. The years come from the scan's own reads, so dating an
 /// album of a hundred tracks costs nothing on top.
-fn album_year(indices: &[usize], parsed: &[(Track, String, Option<i32>)]) -> i32 {
+fn album_year(indices: &[usize], parsed: &[(Track, Option<String>, Option<i32>)]) -> i32 {
     indices
         .iter()
         .find_map(|&i| parsed[i].2)

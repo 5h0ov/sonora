@@ -36,6 +36,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Local albums whose files have no album artist tag no longer split into one album per
+  featured artist. Tracks in the same folder with the same album name now make one album.
 - Loud tracks no longer flatten the top of the visualizer wave.
 - Secondary text and table headers in the Dark and Light themes are easier to read, and now
   meet the WCAG AA contrast minimum, with or without the adaptive theme.
