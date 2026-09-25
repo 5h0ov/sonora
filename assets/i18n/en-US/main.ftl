@@ -879,3 +879,6 @@ trouble-retry = Try again
 toast-offline = No connection. Nothing will stream until it is back.
 toast-settings-broken = Fix line { $name } of settings.json to save changes
 toast-tray-unavailable = There is no system tray to put the icon in
+
+# power
+wake-reason = Music is playing

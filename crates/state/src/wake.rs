@@ -4,12 +4,19 @@ use tokio::sync::watch;
 
 use crate::{AppSettings, Io, Playback, PlaybackState};
 
+/// How long the Linux inhibitor waits before it asks the portal again after a failed request.
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+const RETRY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// What the platform is asked to keep awake. The display is only wanted along with the system.
 #[derive(Clone, Copy, Default, PartialEq, Eq)]
 struct Want {
     system: bool,
     display: bool,
 }
 
+/// Keeps the system awake while music plays, and the display on while it plays in the focused
+/// fullscreen view. Linux asks the desktop portal from tokio, so the lock lands a moment later.
 pub struct Wake {
     settings: Entity<AppSettings>,
     playback: Entity<Playback>,
@@ -31,6 +38,20 @@ impl Wake {
     ) -> Self {
         cx.observe(&settings, |this, _, cx| this.apply(cx)).detach();
         cx.observe(&playback, |this, _, cx| this.apply(cx)).detach();
+
+        let this = cx.weak_entity();
+        cx.on_window_closed(move |cx, _| {
+            if !cx.windows().is_empty() {
+                return;
+            }
+            this.update(cx, |this, cx| {
+                this.fullscreen = false;
+                this.focused = false;
+                this.apply(cx);
+            })
+            .ok();
+        })
+        .detach();
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
         let sender = {
@@ -54,22 +75,27 @@ impl Wake {
         }
     }
 
+    /// Records whether the window shows the fullscreen view, which the display lock needs.
     pub fn set_fullscreen(&mut self, on: bool, cx: &mut Context<Self>) {
         self.fullscreen = on;
         self.apply(cx);
     }
 
+    /// Records whether the window has focus, which the display lock needs.
     pub fn set_focused(&mut self, on: bool, cx: &mut Context<Self>) {
         self.focused = on;
         self.apply(cx);
     }
 
+    /// Works out what should be held now and hands it to the platform when it changed. Loading
+    /// counts as playing so a track change or a rebuffer does not drop the lock.
     fn apply(&mut self, cx: &mut Context<Self>) {
-        let enabled = self.settings.read(cx).stay_awake();
-        let playing = enabled && *self.playback.read(cx).state() == PlaybackState::Playing;
+        let state = self.playback.read(cx).state();
+        let playing = self.settings.read(cx).stay_awake()
+            && matches!(state, PlaybackState::Playing | PlaybackState::Loading);
         let want = Want {
-            system: enabled && playing,
-            display: enabled && playing && self.fullscreen && self.focused,
+            system: playing,
+            display: playing && self.fullscreen && self.focused,
         };
         if want == self.applied {
             return;
@@ -78,6 +104,8 @@ impl Wake {
         self.hold(want);
     }
 
+    /// Hands `want` to the platform. Windows ties the execution state to the calling thread, so
+    /// this runs on the main thread.
     fn hold(&mut self, want: Want) {
         #[cfg(target_os = "windows")]
         {
@@ -102,13 +130,7 @@ impl Wake {
         self.assertions.set(want);
 
         #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-        self.sender.send_if_modified(|current| {
-            if *current == want {
-                return false;
-            }
-            *current = want;
-            true
-        });
+        self.sender.send_replace(want);
 
         #[cfg(not(any(
             target_os = "windows",
@@ -120,7 +142,7 @@ impl Wake {
     }
 }
 
-/// The two assertions on macOS, held by id once created
+/// The two power assertions on macOS, each held by its id while it is on.
 #[cfg(target_os = "macos")]
 #[derive(Default)]
 struct Assertions {
@@ -140,6 +162,7 @@ impl Assertions {
     }
 }
 
+/// Creates or releases one assertion of `kind` so that it is held exactly when `on` is true.
 #[cfg(target_os = "macos")]
 fn hold_one(held: &mut Option<objc2_io_kit::IOPMAssertionID>, on: bool, kind: &str) {
     use objc2_core_foundation::CFString;
@@ -152,7 +175,7 @@ fn hold_one(held: &mut Option<objc2_io_kit::IOPMAssertionID>, on: bool, kind: &s
     }
     if on {
         let kind = CFString::from_str(kind);
-        let name = CFString::from_str("Music is playing");
+        let name = CFString::from_str(&i18n::t!("wake-reason"));
         let mut id = 0;
         // SAFETY: both strings outlive the call and `id` is a valid out pointer.
         let result = unsafe {
@@ -167,44 +190,56 @@ fn hold_one(held: &mut Option<objc2_io_kit::IOPMAssertionID>, on: bool, kind: &s
     }
 }
 
+/// Holds the portal inhibitor that matches the latest `Want` until the sender drops. The new
+/// inhibitor is taken before the old one is released, and a failed request is retried every
+/// `RETRY` while the old one stays held.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
 async fn inhibit(mut receiver: watch::Receiver<Want>) {
-    use ashpd::desktop::Request;
-
-    let mut held: Option<Request<()>> = None;
-    let mut applied = Want::default();
-    while receiver.changed().await.is_ok() {
+    let mut proxy = None;
+    let mut held = None;
+    loop {
         let want = *receiver.borrow_and_update();
-        if want == applied {
-            continue;
+        let mut failed = false;
+        match want.system || want.display {
+            true => match acquire(&mut proxy, want).await {
+                Some(request) => release(held.replace(request)).await,
+                None => failed = true,
+            },
+            false => release(held.take()).await,
         }
-        if let Some(request) = held.take()
-            && let Err(error) = request.close().await
-        {
-            log::warn!("wake: cannot release the inhibitor: {error}");
+        let changed = match failed {
+            true => tokio::select! {
+                changed = receiver.changed() => changed,
+                _ = tokio::time::sleep(RETRY) => Ok(()),
+            },
+            false => receiver.changed().await,
+        };
+        if changed.is_err() {
+            break;
         }
-        if want.system || want.display {
-            held = acquire(want).await;
-        }
-        applied = want;
     }
-    if let Some(request) = held {
-        let _ = request.close().await;
-    }
+    release(held).await;
 }
 
+/// Asks the portal for an inhibitor matching `want`, reaching the portal first if `proxy` is
+/// empty. A failed request clears `proxy` so the next attempt reconnects.
 #[cfg(any(target_os = "linux", target_os = "freebsd"))]
-async fn acquire(want: Want) -> Option<ashpd::desktop::Request<()>> {
+async fn acquire(
+    proxy: &mut Option<ashpd::desktop::inhibit::InhibitProxy>,
+    want: Want,
+) -> Option<ashpd::desktop::Request<()>> {
     use ashpd::desktop::inhibit::{InhibitFlags, InhibitOptions, InhibitProxy};
     use ashpd::enumflags2::BitFlag;
 
-    let proxy = match InhibitProxy::new().await {
-        Ok(proxy) => proxy,
-        Err(error) => {
-            log::warn!("wake: cannot reach the inhibit portal: {error}");
-            return None;
+    if proxy.is_none() {
+        match InhibitProxy::new().await {
+            Ok(reached) => *proxy = Some(reached),
+            Err(error) => {
+                log::warn!("wake: cannot reach the inhibit portal: {error}");
+                return None;
+            }
         }
-    };
+    }
     let mut flags = InhibitFlags::empty();
     if want.system {
         flags.insert(InhibitFlags::Suspend);
@@ -212,12 +247,25 @@ async fn acquire(want: Want) -> Option<ashpd::desktop::Request<()>> {
     if want.display {
         flags.insert(InhibitFlags::Idle);
     }
-    let options = InhibitOptions::default().set_reason("Music is playing");
-    match proxy.inhibit(None, flags, options).await {
+    let reason = i18n::t!("wake-reason");
+    let options = InhibitOptions::default().set_reason(reason.as_ref());
+    let result = proxy.as_ref()?.inhibit(None, flags, options).await;
+    match result {
         Ok(request) => Some(request),
         Err(error) => {
             log::warn!("wake: cannot inhibit: {error}");
+            *proxy = None;
             None
         }
+    }
+}
+
+#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+async fn release(request: Option<ashpd::desktop::Request<()>>) {
+    let Some(request) = request else {
+        return;
+    };
+    if let Err(error) = request.close().await {
+        log::warn!("wake: cannot release the inhibitor: {error}");
     }
 }
