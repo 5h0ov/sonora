@@ -540,25 +540,18 @@ impl SettingsView {
 
     fn tab_slots(&self, tab: SettingsTab, cx: &App) -> Vec<Slot> {
         match tab {
-            SettingsTab::General => {
-                let mut slots = vec![
-                    Slot::Startup,
-                    Slot::Entries,
-                    Slot::Language,
-                    Slot::Title("settings-group-window"),
-                    Slot::Tray,
-                ];
-                if self.settings.read(cx).close_to_tray() {
-                    slots.push(Slot::TrayIcon);
-                }
-                slots.extend([
-                    Slot::Title("settings-group-accounts"),
-                    Slot::Accounts,
-                    Slot::Title("settings-group-library"),
-                    Slot::LocalFolder,
-                ]);
-                slots
-            }
+            SettingsTab::General => vec![
+                Slot::Startup,
+                Slot::Entries,
+                Slot::Language,
+                Slot::Title("settings-group-window"),
+                Slot::Tray,
+                Slot::TrayIcon,
+                Slot::Title("settings-group-accounts"),
+                Slot::Accounts,
+                Slot::Title("settings-group-library"),
+                Slot::LocalFolder,
+            ],
             SettingsTab::Appearance => vec![
                 Slot::Title("settings-tab-general"),
                 Slot::Theme,

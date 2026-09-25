@@ -98,6 +98,7 @@ pub fn install(show: impl Fn(&mut App) + 'static, cx: &mut App) -> bool {
 pub struct Tray {
     icon: Icon,
     shown: Shown,
+    /// Whether the icon is in the tray now, which `place` compares against the setting.
     placed: bool,
     /// The cover the art below was loaded from, so a repeat of the same track loads nothing.
     cover: Option<String>,
@@ -169,12 +170,10 @@ impl Tray {
         tray
     }
 
-    /// Puts the icon in the tray, or takes it out. It follows `tray_icon`, but only while
-    /// `close_to_tray` is on, which keeps the choice for when the app runs in the background again.
-    /// An icon that cannot be placed turns `tray_icon` off and says so.
+    /// Puts the icon in the tray, or takes it out, following `tray_icon` alone. An icon that cannot
+    /// be placed turns `tray_icon` off and says so.
     fn place(&mut self, cx: &mut Context<Self>) {
-        let settings = Sonora::global(cx).settings.read(cx);
-        let placed = settings.close_to_tray() && settings.tray_icon();
+        let placed = Sonora::global(cx).settings.read(cx).tray_icon();
         if placed == self.placed {
             return;
         }
