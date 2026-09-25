@@ -523,7 +523,7 @@ impl std::fmt::Display for SignInFailure {
             SignInProblem::Premium => "the account has no Spotify Premium",
             SignInProblem::Region => "the account is out of its home region",
             SignInProblem::Credentials => "the stored credentials are no longer valid",
-            SignInProblem::Network => "Spotify could not be reached",
+            SignInProblem::Network => "the provider could not be reached",
             SignInProblem::Cancelled => "authorization was cancelled in the browser",
             SignInProblem::Refused => "Spotify refused the session",
         };
