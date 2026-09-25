@@ -14,8 +14,8 @@ use ui::{
     ActiveTheme as _, Button, InlineLink, InlineLinks, Menu, Picker, Popovers, Popup, SortAxis,
 };
 use ui::{
-    ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pin, PinKind, Scrollbar, Scroller,
-    TableDelegate, TableEvent, TableState, Text, Toggle, runtime, table,
+    ColumnSpec, FilterChange, Listing as _, MIN_CONTENT, Pending, Pin, PinKind, Scrollbar,
+    Scroller, TableDelegate, TableEvent, TableState, Text, Toggle, runtime, table,
 };
 
 use crate::shared::menus::{album_menu, playlist_menu};
@@ -74,6 +74,21 @@ impl Tracks for DetailTracks {
 
     fn is_loading(&self, cx: &App) -> bool {
         self.0.read(cx).is_loading()
+    }
+
+    /// As many rows as the header says the album or playlist holds, or a screenful when the
+    /// page opened without a header or with a provider that reports no count.
+    fn pending(&self, cx: &App) -> Option<Pending> {
+        let detail = self.0.read(cx);
+        if !detail.is_loading() {
+            return None;
+        }
+        Some(
+            match detail.header().map_or(0, |header| header.track_count) {
+                0 => Pending::Screen,
+                count => Pending::Rows(count as usize),
+            },
+        )
     }
 }
 
