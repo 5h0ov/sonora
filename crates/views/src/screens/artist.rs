@@ -10,7 +10,7 @@ use gpui::{
 use crate::chrome::Chrome;
 use crate::shared::cells;
 use i18n::t;
-use music::{Album, SavedArtist, Track};
+use music::{SavedArtist, Track};
 use state::{AppSettings, ArtistDetail, Origin, Playback, Sonora};
 use ui::ActiveTheme as _;
 use ui::Listing as _;
@@ -26,7 +26,7 @@ use crate::shared::album_grid::CardGrid;
 use crate::shared::cards::{self, ReleaseFilter};
 use crate::shared::confirm::Confirm;
 use crate::shared::hero::{HeroMetaStrip, HeroPlayButton, PageHero};
-use crate::shared::menus::{ItemMenu, album_menu, artist_menu};
+use crate::shared::menus::{ItemMenu, artist_menu};
 use crate::shared::page;
 use crate::shared::picks::{Picks, Shape};
 use crate::shared::shelves::{Rail, RailSpec};
@@ -79,7 +79,6 @@ pub(crate) struct ArtistView {
     toolbar: Entity<Toolbar>,
     me: WeakEntity<Self>,
     popovers: Popovers,
-    release_menu: Option<(Album, Point<Pixels>)>,
     /// Where the releases grid's leading edge landed last frame, in window coordinates, or
     /// none until it has been laid out once. `hold_releases` needs it to tell how deep the
     /// page is scrolled into the grid.
@@ -228,7 +227,6 @@ impl ArtistView {
             toolbar,
             me: me.downgrade(),
             popovers: Popovers::default(),
-            release_menu: None,
             release_lead: Rc::new(Cell::new(None)),
             release_columns: 0,
             release_tile: Pixels::ZERO,
@@ -590,7 +588,6 @@ impl ArtistView {
                         let listed = held.detail.read(cx).albums();
                         let cards = shown[start..end].iter().filter_map(|&index| {
                             let album = listed.get(index)?;
-                            let opened = opened.clone();
 
                             Some(
                                 cards::album_card(
@@ -601,20 +598,6 @@ impl ArtistView {
                                 )
                                 .tile(card)
                                 .flat()
-                                .menu(move |event, _, cx| {
-                                    let position = event.position;
-                                    opened
-                                        .update(cx, |this, cx| {
-                                            let Some(album) =
-                                                this.detail.read(cx).albums().get(index).cloned()
-                                            else {
-                                                return;
-                                            };
-                                            this.release_menu = Some((album, position));
-                                            cx.notify();
-                                        })
-                                        .ok();
-                                })
                                 .into_any_element(),
                             )
                         });
@@ -998,13 +981,6 @@ impl Render for ArtistView {
                 .update(cx, |table, _| table.set_viewport(viewport));
         }
 
-        let release_menu = self.release_menu.clone().map(|(album, position)| {
-            let menu = album_menu(album, self.playback.clone(), false, cx);
-            Popup::new(position, menu).on_close(cx.listener(|this, _, _, cx| {
-                this.release_menu = None;
-                cx.notify();
-            }))
-        });
         let picked = self.track_context.and_then(|(place, position)| {
             self.popular
                 .get(place)
@@ -1066,7 +1042,6 @@ impl Render for ArtistView {
             .relative()
             .size_full()
             .child(page)
-            .when_some(release_menu, |this, menu| this.child(menu))
             .when_some(track_menu, |this, menu| this.child(menu))
             .children(self.about_dialog(cx))
     }

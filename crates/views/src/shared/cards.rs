@@ -7,6 +7,7 @@ use state::{Origin, Playback, PlaybackState};
 use ui::{ActiveTheme as _, Card, InlineLinks, Pinnable, Text, Theme};
 
 use crate::shared::cells;
+use crate::shared::menus::{CardMenu, Item};
 use crate::shared::pins::Pinned as _;
 
 const BULLET: SharedString = SharedString::new_static("·");
@@ -47,6 +48,10 @@ pub(crate) fn album_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Album(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Album(album.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
 }
 
@@ -74,12 +79,16 @@ pub(crate) fn playlist_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Playlist(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Playlist(playlist.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
 }
 
-/// The card of a track with nothing wired to play it: name, cover, explicit mark and pin,
-/// tinted while it is the one playing. Whoever lists it adds the caption and the play and
-/// press it wants; `track_status` tells them where playback stands.
+/// The card of a track with nothing wired to play it: name, cover, explicit mark, pin and the
+/// shared context menu, tinted while it is the one playing. Whoever lists it adds the caption
+/// and the play and press it wants, and `track_status` tells them where playback stands.
 pub(crate) fn track_card(
     id: impl Into<ElementId>,
     track: &Track,
@@ -98,6 +107,10 @@ pub(crate) fn track_card(
         .tint(tint)
         .hint()
         .when(track.explicit, Card::explicit)
+        .menu(CardMenu::opener(
+            Item::Track(track.clone()),
+            playback.clone(),
+        ))
         .when_some(track.pin(), Pinnable::pin)
 }
 
@@ -381,6 +394,10 @@ pub(crate) fn artist_card(
             toggled.update(cx, |playback, cx| playback.toggle_origin(&origin, cx));
         })
         .press(move |_, _, cx| navigate(Destination::Artist(opened.clone()), cx))
+        .menu(CardMenu::opener(
+            Item::Artist(artist.clone()),
+            playback.clone(),
+        ))
         .when_some(pin, Pinnable::pin)
 }
 

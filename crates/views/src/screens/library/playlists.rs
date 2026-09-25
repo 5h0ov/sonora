@@ -180,7 +180,6 @@ impl TableSource for PlaylistSource {
         Some(playlist_menu(
             self.at(*rows.first()?, cx)?,
             self.playback.clone(),
-            false,
             cx,
         ))
     }
