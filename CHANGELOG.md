@@ -180,6 +180,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - An LRC `[offset:]` tag is applied to every line, so a sheet that starts a few hundred
   milliseconds late or early stays in time.
+- An untagged song named like `01. Title - Artist` keeps the title without the track number,
+  instead of leaving `01.` on the front.
 - Signing in to Spotify works on accounts whose username holds a letter outside ASCII, such as
   an ö, instead of failing straight after authentication.
 - The fullscreen button works right after picking a language or a typeface in Settings, instead

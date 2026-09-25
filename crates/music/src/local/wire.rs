@@ -193,7 +193,8 @@ fn infer_from_stem(stem: &str) -> (Option<String>, Option<String>) {
             if right.chars().all(|c| c.is_ascii_digit()) {
                 return (Some(left.to_owned()), None);
             }
-            return (Some(left.to_owned()), Some(right.to_owned()));
+            let title = numbered(left).unwrap_or_else(|| left.to_owned());
+            return (Some(title), Some(right.to_owned()));
         }
     }
     numbered(stem)
@@ -202,12 +203,20 @@ fn infer_from_stem(stem: &str) -> (Option<String>, Option<String>) {
 }
 
 fn numbered(stem: &str) -> Option<String> {
-    let (digits, rest) = stem.split_once('.')?;
-    if digits.is_empty() || digits.len() > 3 || !digits.chars().all(|c| c.is_ascii_digit()) {
-        return None;
+    let stem = stem.trim();
+    for sep in [".", " - ", " \u{2013} ", " \u{2014} ", " \u{ff0d} "] {
+        if let Some((digits, rest)) = stem.split_once(sep)
+            && !digits.is_empty()
+            && digits.len() <= 3
+            && digits.chars().all(|c| c.is_ascii_digit())
+        {
+            let rest = rest.trim();
+            if !rest.is_empty() {
+                return Some(rest.to_owned());
+            }
+        }
     }
-    let rest = rest.trim();
-    (!rest.is_empty()).then(|| rest.to_owned())
+    None
 }
 
 struct FallbackProbe {
