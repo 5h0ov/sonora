@@ -297,6 +297,7 @@ struct Values {
     check_updates: bool,
     close_to_tray: bool,
     tray_icon: bool,
+    stay_awake: bool,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -389,6 +390,7 @@ impl Default for Values {
             check_updates: cfg!(target_os = "windows"),
             close_to_tray: true,
             tray_icon: true,
+            stay_awake: true,
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -759,6 +761,11 @@ impl AppSettings {
 
     pub fn tray_icon(&self) -> bool {
         self.values.tray_icon
+    }
+
+    /// Whether music keeps the system awake and, in fullscreen, the display.
+    pub fn stay_awake(&self) -> bool {
+        self.values.stay_awake
     }
 
     /// Every linked scrobbling account, keyed by its service slug.
@@ -1135,6 +1142,11 @@ impl AppSettings {
 
     pub fn set_tray_icon(&mut self, tray_icon: bool, cx: &mut Context<Self>) {
         self.values.tray_icon = tray_icon;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_stay_awake(&mut self, stay_awake: bool, cx: &mut Context<Self>) {
+        self.values.stay_awake = stay_awake;
         self.schedule_save(cx);
     }
 

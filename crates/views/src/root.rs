@@ -207,6 +207,10 @@ impl Root {
         })
         .detach();
 
+        cx.observe_window_activation(window, |_, window, cx| update_focus_for_wake(window, cx))
+            .detach();
+        update_focus_for_wake(window, cx);
+
         window
             .observe_window_appearance(|_, cx| {
                 let settings = Sonora::global(cx).settings.clone();
@@ -388,12 +392,14 @@ impl Root {
             .update(cx, |workspace, cx| workspace.show_side(tab, cx));
     }
 
-    /// Tells the adaptive theme whether fullscreen is up. The ambient background is painted
-    /// out of the cover's hues, so fullscreen samples the cover even with the adaptive theme
-    /// off, and leaving drops the tint again.
-    fn tinting(&self, fullscreen: bool, cx: &mut Context<Self>) {
+    /// Tells the adaptive theme and the wake lock whether fullscreen is up. The ambient
+    /// background is painted out of the cover's hues, so fullscreen samples the cover even with
+    /// the adaptive theme off, and leaving drops the tint again.
+    fn announce_fullscreen(&self, fullscreen: bool, cx: &mut Context<Self>) {
         self.adaptive
             .update(cx, |adaptive, cx| adaptive.set_fullscreen(fullscreen, cx));
+        let wake = Sonora::global(cx).wake.clone();
+        wake.update(cx, |wake, cx| wake.set_fullscreen(fullscreen, cx));
     }
 
     fn toggle_fullscreen(&mut self, cx: &mut Context<Self>) {
@@ -474,13 +480,13 @@ impl Root {
             .update(cx, |view, cx| view.set_visible(home, cx));
         if let Destination::Fullscreen = destination {
             self.view = RootView::Fullscreen;
-            self.tinting(true, cx);
+            self.announce_fullscreen(true, cx);
             self.pending = Some(Focus::Fullscreen);
             cx.notify();
             return;
         }
         self.view = RootView::Workspace;
-        self.tinting(false, cx);
+        self.announce_fullscreen(false, cx);
         self.pending = Some(match destination {
             Destination::Search => Focus::Search,
             _ => Focus::Workspace,
@@ -614,6 +620,13 @@ fn scripts(custom: bool) -> &'static FontFallbacks {
         }),
         false => BUNDLED.get_or_init(|| FontFallbacks::from_fonts(named().collect())),
     }
+}
+
+/// Tells the wake lock whether the window has focus, which the display lock needs.
+fn update_focus_for_wake(window: &Window, cx: &mut App) {
+    let focused = window.is_window_active();
+    let wake = Sonora::global(cx).wake.clone();
+    wake.update(cx, |wake, cx| wake.set_focused(focused, cx));
 }
 
 impl Render for Root {

@@ -59,6 +59,7 @@ windows = { version = "0.62", features = [
 windows-sys = { version = "0.61", features = [
   "Win32_Graphics_Dwm",
   "Win32_Graphics_Gdi",
+  "Win32_System_Power",
   "Win32_UI_Shell",
   "Win32_UI_WindowsAndMessaging",
 ] }
@@ -115,7 +116,19 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSStatusItem",
   "NSWorkspace",
 ] }
-ashpd = { version = "0.13", default-features = false, features = ["async-io", "settings"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "CFString",
+] }
+objc2-io-kit = { version = "0.3", default-features = false, features = [
+  "std",
+  "pwr_mgt",
+] }
+ashpd = { version = "0.13", default-features = false, features = [
+  "async-io",
+  "inhibit",
+  "settings",
+] }
 reqwest = { version = "0.13", default-features = false, features = [
   "blocking",
   "form",
