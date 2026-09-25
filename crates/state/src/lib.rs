@@ -226,8 +226,15 @@ pub fn init(
         )
     });
     let scan = cx.new(|cx| Scan::new(session.clone(), cx));
-    let scrobbling =
-        cx.new(|cx| Scrobbling::new(playback.clone(), settings.clone(), io.clone(), cx));
+    let scrobbling = cx.new(|cx| {
+        Scrobbling::new(
+            playback.clone(),
+            session.clone(),
+            settings.clone(),
+            io.clone(),
+            cx,
+        )
+    });
     let lyrics = cx.new(|cx| {
         Lyrics::new(
             playback.clone(),

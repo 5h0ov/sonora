@@ -213,10 +213,13 @@ pub enum PlaybackState {
 }
 
 /// What other entities hear from `Playback`: history records a start, the sheet closes on an
-/// end.
+/// end, and scrobbling tells the provider about every pause and seek.
 pub enum PlaybackEvent {
     StartedPlayback,
     EndedPlayback,
+    Paused,
+    /// The engine landed a seek, playing or paused.
+    Seeked,
 }
 
 /// A one-shot request to pause after wall-clock time or when the current track ends.
@@ -2169,6 +2172,7 @@ impl Playback {
                 self.position = at;
                 self.clock.reset(at, false);
                 self.remember(true, cx);
+                cx.emit(PlaybackEvent::Paused);
                 self.follow_up_seek(cx);
             }
             BackendEvent::Seeked { at, .. } => {
@@ -2176,6 +2180,7 @@ impl Playback {
                 self.position = at;
                 self.clock.reset(at, self.state == PlaybackState::Playing);
                 self.remember(true, cx);
+                cx.emit(PlaybackEvent::Seeked);
                 self.follow_up_seek(cx);
             }
             BackendEvent::Position { at, .. } => {
