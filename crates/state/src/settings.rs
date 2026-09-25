@@ -296,6 +296,7 @@ struct Values {
     adaptive_menu: bool,
     check_updates: bool,
     close_to_tray: bool,
+    tray_icon: bool,
     language: String,
     #[serde(default = "system_font")]
     font: String,
@@ -387,6 +388,7 @@ impl Default for Values {
             adaptive_menu: false,
             check_updates: cfg!(target_os = "windows"),
             close_to_tray: true,
+            tray_icon: true,
             language: i18n::AUTO.to_owned(),
             font: system_font(),
             startup: DEFAULT_STARTUP.to_owned(),
@@ -753,6 +755,10 @@ impl AppSettings {
 
     pub fn close_to_tray(&self) -> bool {
         self.values.close_to_tray
+    }
+
+    pub fn tray_icon(&self) -> bool {
+        self.values.tray_icon
     }
 
     /// Every linked scrobbling account, keyed by its service slug.
@@ -1124,6 +1130,11 @@ impl AppSettings {
 
     pub fn set_close_to_tray(&mut self, close_to_tray: bool, cx: &mut Context<Self>) {
         self.values.close_to_tray = close_to_tray;
+        self.schedule_save(cx);
+    }
+
+    pub fn set_tray_icon(&mut self, tray_icon: bool, cx: &mut Context<Self>) {
+        self.values.tray_icon = tray_icon;
         self.schedule_save(cx);
     }
 
