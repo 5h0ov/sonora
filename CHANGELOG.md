@@ -15,6 +15,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   releases and similar artists under Albums and Artists tabs, and Apple Music artists
   list what they appear on.
 
+### Changed
+
+- Album, playlist, library and history pages give their total length as 46m 15s, or 1h 2m past
+  an hour, rather than a clock reading like 46:15.
+
 ### Fixed
 
 - Loud tracks no longer flatten the top of the visualizer wave.
