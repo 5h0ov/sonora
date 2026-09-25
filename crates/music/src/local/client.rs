@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use storage::Database;
 
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed, MediaKind,
-    MusicApi, Playlist, PlaylistDetail, SavedArtist, Track, TrackTags, UserProfile,
-    distinct_covers,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, GenreItem, GenreSection, HomeFeed,
+    MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS, SavedArtist, Track, TrackTags,
+    UserProfile, distinct_covers,
 };
 
 use super::index::Index;
@@ -408,6 +408,31 @@ impl MusicApi for LocalClient {
 
     async fn album_tracks(&self, album_id: &str) -> Result<Vec<Track>> {
         Ok(self.album_songs(album_id))
+    }
+
+    /// The other albums carrying the page's artist credit. Nothing here knows one artist
+    /// from another beyond the credit string, so similarity stays out.
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        _artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        let albums = self.all_albums().await?;
+        let Some(artists) = albums
+            .iter()
+            .find(|album| album.id == album_id)
+            .map(|album| album.artists.clone())
+        else {
+            return Ok(AlbumCatalogue::default());
+        };
+        Ok(AlbumCatalogue {
+            also_like: albums
+                .into_iter()
+                .filter(|album| album.id != album_id && album.artists == artists)
+                .take(SUGGESTIONS)
+                .collect(),
+            similar: Vec::new(),
+        })
     }
 
     async fn playlist(&self, playlist_id: &str) -> Result<PlaylistDetail> {

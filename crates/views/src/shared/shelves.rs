@@ -28,13 +28,11 @@ const HEADING_GAP: Pixels = px(12.);
 const LEADING: f32 = 1.4;
 const HEADING: Pixels = px(140.);
 
-type Rail = (ScrollHandle, Glide);
-
 pub(crate) struct Shelves {
     id: &'static str,
     host: EntityId,
     playback: Entity<Playback>,
-    rails: Vec<Rail>,
+    rails: Vec<(ScrollHandle, Glide)>,
     /// The submenu state of a track's context menu.
     menus: ItemMenu,
     context_menu: Option<(Item, Point<Pixels>)>,
@@ -468,6 +466,222 @@ fn slide(handle: &ScrollHandle, glide: &Glide, forward: bool, window: &mut Windo
     };
 
     glide.aim(handle, point(next, at.y), window);
+}
+
+/// One horizontal card rail outside a shelf page: a heading with paging arrows over a
+/// sideways scroller. Artist and album pages draw their recommendations with these, so
+/// neither rebuilds the scroll plumbing a shelf keeps for its sections.
+pub(crate) struct Rail {
+    scroll: ScrollHandle,
+    glide: Glide,
+}
+
+impl Rail {
+    /// A rail that reports its scrolls to `host`, the page holding it.
+    pub(crate) fn new(host: EntityId) -> Self {
+        let mut glide = Glide::default();
+        glide.watch(host);
+        Self {
+            scroll: ScrollHandle::new(),
+            glide,
+        }
+    }
+
+    /// Catches the glide up with its scroller before the frame draws it.
+    pub(crate) fn sync(&self) {
+        self.glide.sync(&self.scroll);
+    }
+
+    /// Puts the rail back at its first card at once, for when it starts showing other cards.
+    pub(crate) fn rewind(&self) {
+        self.glide.jump(&self.scroll, Point::default());
+    }
+
+    /// The rail under its heading: the title with paging arrows beside it while the cards
+    /// overflow, the kind pills when the rail has kinds to narrow by, and the cards in a
+    /// sideways scroller. `notify` repaints the page holding the rail, which the arrows
+    /// need to refresh themselves.
+    pub(crate) fn render(
+        &self,
+        spec: RailSpec,
+        window: &Window,
+        cx: &mut App,
+        notify: &Rc<dyn Fn(&mut App)>,
+        draw: impl Fn(usize, &mut Window, &mut App) -> AnyElement + 'static,
+    ) -> AnyElement {
+        let RailSpec {
+            tag,
+            place,
+            title,
+            count,
+            tile,
+            columns,
+            tabs,
+        } = spec;
+        let tall = Card::tile_height(tile, window, cx);
+        let scrolled = self.scroll.clone();
+        let glided = self.glide.clone();
+        let arrows = match count > columns {
+            true => Some(arrows(tag, place, &self.scroll, &self.glide, notify)),
+            false => None,
+        };
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .justify_between()
+                    .gap_4()
+                    .h(head(window, cx))
+                    .child(heading(title, cx))
+                    .children(arrows),
+            )
+            .children(tabs)
+            .child(
+                div()
+                    .id((tag, place))
+                    .w_full()
+                    .h(tall)
+                    .overflow_x_scroll()
+                    .restrict_scroll_to_axis()
+                    .track_scroll(&self.scroll)
+                    .on_scroll_wheel(move |event: &ScrollWheelEvent, window, _| {
+                        if event.delta.precise() {
+                            return;
+                        }
+                        glided.nudge(&scrolled, window);
+                    })
+                    .child(
+                        Deck::new(SharedString::from(format!("{tag}-rail-{place}")))
+                            .across()
+                            .rows(std::iter::repeat_n(tile, count))
+                            .gap(RAIL_GAP)
+                            .draw(draw),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    /// The rail while its cards are still on their way: the heading over skeleton tiles.
+    pub(crate) fn pending(
+        title: SharedString,
+        tile: Pixels,
+        columns: usize,
+        window: &Window,
+        cx: &mut App,
+    ) -> AnyElement {
+        let tall = Card::tile_height(tile, window, cx);
+
+        div()
+            .flex()
+            .flex_col()
+            .gap_3()
+            .child(
+                div()
+                    .flex()
+                    .items_end()
+                    .h(head(window, cx))
+                    .child(heading(title, cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .w_full()
+                    .h(tall)
+                    .gap(RAIL_GAP)
+                    .overflow_hidden()
+                    .children((0..columns).map(|place| {
+                        Card::skeleton(("rail-pending", place))
+                            .tile(tile)
+                            .into_any_element()
+                    })),
+            )
+            .into_any_element()
+    }
+}
+
+/// What a rail draws: its heading and the cards behind it. `tile` is how wide one card
+/// stands and `columns` how many fit across, which is what decides whether the paging
+/// arrows show. `tabs` is the tab row, drawn between the heading and the cards.
+pub(crate) struct RailSpec {
+    pub tag: &'static str,
+    pub place: usize,
+    pub title: SharedString,
+    pub count: usize,
+    pub tile: Pixels,
+    pub columns: usize,
+    pub tabs: Option<AnyElement>,
+}
+
+/// The paging arrows of a rail head, which is what tells a crowded rail from a short one.
+fn arrows(
+    tag: &'static str,
+    place: usize,
+    scroll: &ScrollHandle,
+    glide: &Glide,
+    notify: &Rc<dyn Fn(&mut App)>,
+) -> AnyElement {
+    let at = glide.goal(scroll).x;
+    let reach = scroll.max_offset().x;
+
+    div()
+        .flex()
+        .flex_none()
+        .items_center()
+        .gap_1()
+        .child(
+            arrow(
+                SharedString::from(format!("{tag}-previous-{place}")),
+                false,
+                scroll,
+                glide,
+                notify,
+            )
+            .disabled(at >= -STEADY),
+        )
+        .child(
+            arrow(
+                SharedString::from(format!("{tag}-next-{place}")),
+                true,
+                scroll,
+                glide,
+                notify,
+            )
+            .disabled(reach > Pixels::ZERO && at <= STEADY - reach),
+        )
+        .into_any_element()
+}
+
+fn arrow(
+    id: SharedString,
+    forward: bool,
+    scroll: &ScrollHandle,
+    glide: &Glide,
+    notify: &Rc<dyn Fn(&mut App)>,
+) -> Button {
+    let scroll = scroll.clone();
+    let glide = glide.clone();
+    let notify = notify.clone();
+
+    Button::new(id)
+        .small()
+        .outline()
+        .icon(match forward {
+            true => "icons/chevron-right.svg",
+            false => "icons/chevron-left.svg",
+        })
+        .tooltip(match forward {
+            true => "common-next",
+            false => "common-previous",
+        })
+        .on_click(move |_, window, cx| {
+            slide(&scroll, &glide, forward, window);
+            notify(cx);
+        })
 }
 
 fn slot(kind: &'static str, place: usize) -> ElementId {

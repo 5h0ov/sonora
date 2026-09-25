@@ -134,6 +134,23 @@ pub struct AlbumDetail {
     pub tracks: Vec<Track>,
 }
 
+/// What an album page fills in once its tracks are already on screen: the releases the
+/// provider lists as related, with more from the same artist first and similar artists'
+/// releases topping the rail up, plus the similar artists themselves for the rail's
+/// artists tab. Every list replaces what the page held, and an empty one leaves that
+/// part alone.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AlbumCatalogue {
+    pub also_like: Vec<Album>,
+    pub similar: Vec<SavedArtist>,
+}
+
+impl AlbumCatalogue {
+    pub fn is_empty(&self) -> bool {
+        self.also_like.is_empty() && self.similar.is_empty()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Genre {
     pub id: String,
@@ -224,17 +241,19 @@ pub struct Artist {
     pub albums: Vec<Album>,
 }
 
-/// What an artist page fills in once its overview is already on screen. Both lists replace
-/// what `MusicApi::artist` answered with, and an empty one leaves that part alone.
+/// What an artist page fills in once its overview is already on screen. Every list
+/// replaces what `MusicApi::artist` answered with, and an empty one leaves that part alone.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ArtistCatalogue {
     pub albums: Vec<Album>,
     pub top_tracks: Vec<Track>,
+    /// What the artist guests on, from the provider's appears-on listing.
+    pub appears_on: Vec<Album>,
 }
 
 impl ArtistCatalogue {
     pub fn is_empty(&self) -> bool {
-        self.albums.is_empty() && self.top_tracks.is_empty()
+        self.albums.is_empty() && self.top_tracks.is_empty() && self.appears_on.is_empty()
     }
 }
 

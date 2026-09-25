@@ -22,12 +22,13 @@ use futures::stream::{self, StreamExt as _, TryStreamExt as _};
 use serde_json::Value;
 
 use crate::apple::auth::{self, AGENT};
+use crate::apple::recommend;
 use crate::apple::wire;
 use crate::engine::Loudness;
 use crate::{
-    Album, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem, GenreSection,
-    HomeFeed, MediaKind, MusicApi, Page, Pages, PinOutcome, PinTarget, PinTargetKind, Playlist,
-    PlaylistDetail, SavedArtist, Track, UserProfile, escape,
+    Album, AlbumCatalogue, AlbumDetail, Artist, ArtistCatalogue, ArtistProfile, Genre, GenreDetail,
+    GenreItem, GenreSection, HomeFeed, MediaKind, MusicApi, Page, Pages, PinOutcome, PinTarget,
+    PinTargetKind, Playlist, PlaylistDetail, SavedArtist, Track, UserProfile, escape,
 };
 
 /// The API the web player calls.
@@ -239,7 +240,7 @@ impl AppleClient {
         &self.storefront
     }
 
-    fn catalog(&self, path: &str) -> String {
+    pub(crate) fn catalog(&self, path: &str) -> String {
         format!("/catalog/{}{path}", escape::component(&self.storefront))
     }
 
@@ -355,7 +356,7 @@ impl AppleClient {
         Ok(answered)
     }
 
-    async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
+    pub(crate) async fn get(&self, path: &str, query: &[(&str, &str)]) -> Result<Value> {
         self.send(reqwest::Method::GET, path, query, None).await
     }
 
@@ -778,8 +779,27 @@ impl AppleClient {
         Ok((tracks, next, total))
     }
 
+    /// The catalog id of an artist, looked up through the library when `artist_id` is a
+    /// library id. Fails for a library artist the catalog has no page for.
+    pub(crate) async fn catalog_artist(&self, artist_id: &str) -> Result<String> {
+        if !Self::is_mine(artist_id) {
+            return Ok(artist_id.to_owned());
+        }
+        self.get(
+            &format!("/me/library/artists/{}", escape::component(artist_id)),
+            &[("include", "catalog")],
+        )
+        .await?
+        .pointer("/data/0")
+        .and_then(wire::catalog)
+        .and_then(|found| found.get("id"))
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .context("this library artist has no page in the catalog")
+    }
+
     /// Whether an id belongs to the listener's own library rather than the catalog.
-    fn is_mine(id: &str) -> bool {
+    pub(crate) fn is_mine(id: &str) -> bool {
         let mut letters = id.chars();
         matches!(letters.next(), Some('i' | 'l' | 'r' | 'p')) && letters.next() == Some('.')
     }
@@ -1217,22 +1237,16 @@ impl MusicApi for AppleClient {
         Ok(self.album(album_id).await?.tracks)
     }
 
+    async fn album_catalogue(
+        &self,
+        album_id: &str,
+        artist_id: Option<&str>,
+    ) -> Result<AlbumCatalogue> {
+        recommend::album_catalogue(self, album_id, artist_id).await
+    }
+
     async fn artist(&self, artist_id: &str) -> Result<Artist> {
-        let id = match Self::is_mine(artist_id) {
-            true => self
-                .get(
-                    &format!("/me/library/artists/{}", escape::component(artist_id)),
-                    &[("include", "catalog")],
-                )
-                .await?
-                .pointer("/data/0")
-                .and_then(wire::catalog)
-                .and_then(|found| found.get("id"))
-                .and_then(Value::as_str)
-                .map(str::to_owned)
-                .context("this library artist has no page in the catalog")?,
-            false => artist_id.to_owned(),
-        };
+        let id = self.catalog_artist(artist_id).await?;
         let answered = self
             .get(
                 &self.catalog(&format!("/artists/{}", escape::component(&id))),
@@ -1246,6 +1260,10 @@ impl MusicApi for AppleClient {
             .pointer("/data/0")
             .and_then(wire::artist)
             .with_context(|| format!("cannot read the apple artist {id}"))
+    }
+
+    async fn artist_catalogue(&self, artist_id: &str, _known: &[Track]) -> Result<ArtistCatalogue> {
+        recommend::artist_catalogue(self, artist_id).await
     }
 
     async fn artist_profile(&self, artist_id: &str) -> Result<ArtistProfile> {

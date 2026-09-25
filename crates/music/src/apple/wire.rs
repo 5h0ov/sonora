@@ -400,6 +400,18 @@ pub fn artist_profile(value: &Value) -> Option<ArtistProfile> {
     })
 }
 
+/// One artist out of a similar-artists view: an id to open and a face for the rail's
+/// artists tab.
+pub fn similar_artist(value: &Value) -> Option<SavedArtist> {
+    let attributes = value.get("attributes")?;
+    Some(SavedArtist {
+        id: value.get("id")?.as_str()?.to_owned(),
+        name: text(attributes, "name")?,
+        cover: artwork(attributes, ART),
+        added_at: None,
+    })
+}
+
 /// The rows of one named view of a resource, which is how an artist page carries its songs and
 /// releases.
 pub fn view<'a>(value: &'a Value, name: &str) -> &'a [Value] {
