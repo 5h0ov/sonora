@@ -14,7 +14,8 @@ pub struct Known {
     pub mtime: i64,
     pub size: u64,
     pub track: Track,
-    pub album_artist: String,
+    /// The album artist the tags name, `None` when they name none.
+    pub album_artist: Option<String>,
     /// The year the tag carried, which is what an album is dated by.
     pub year: Option<i32>,
 }
@@ -311,12 +312,14 @@ fn forget_rows(connection: &Connection, table: &str, paths: &[PathBuf]) -> Resul
     Ok(())
 }
 
+/// Records each file as its track, the tag's year and the album artist, in that order. A row in
+/// any other shape fails to parse on the next scan and its file is read again.
 fn write_files(connection: &Connection, files: &[(PathBuf, Known)]) -> Result<()> {
     let mut insert = connection
         .prepare("INSERT OR REPLACE INTO local_files (path, parent, mtime, size, track) VALUES (?, ?, ?, ?, ?)")
         .context("cannot record a file")?;
     for (path, known) in files {
-        let Ok(track) = serde_json::to_string(&(&known.track, &known.album_artist, known.year))
+        let Ok(track) = serde_json::to_string(&(&known.track, known.year, &known.album_artist))
         else {
             continue;
         };
@@ -355,7 +358,7 @@ fn write_folders(connection: &Connection, folders: &[(PathBuf, Seen)]) -> Result
 
 /// Turns the stored tracks back into models, a chunk of rows to a thread. A row that no longer
 /// parses is dropped, which costs one file read on the next scan and nothing else.
-type Parsed = (String, String, i64, i64, Track, String, Option<i32>);
+type Parsed = (String, String, i64, i64, Track, Option<String>, Option<i32>);
 
 fn parse(rows: Vec<(String, String, i64, i64, String)>) -> Vec<Parsed> {
     let threads = std::thread::available_parallelism().map_or(4, std::num::NonZero::get);
@@ -369,8 +372,9 @@ fn parse(rows: Vec<(String, String, i64, i64, String)>) -> Vec<Parsed> {
                     chunk
                         .iter()
                         .filter_map(|(path, parent, mtime, size, track)| {
-                            let (track, album_artist, year) =
-                                serde_json::from_str::<(Track, String, Option<i32>)>(track).ok()?;
+                            let (track, year, album_artist) =
+                                serde_json::from_str::<(Track, Option<i32>, Option<String>)>(track)
+                                    .ok()?;
                             Some((
                                 path.clone(),
                                 parent.clone(),
