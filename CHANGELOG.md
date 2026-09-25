@@ -41,6 +41,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   meet the WCAG AA contrast minimum, with or without the adaptive theme.
 - On Linux, playerctl and the desktop media widget read Sonora's real volume instead of always
   seeing 100%.
+- A YouTube Music sign-in no longer runs out after about 40 minutes. Likes and playlist edits keep
+  working, and Sonora stays signed in across restarts.
 
 ## [0.39.0] - 2026-09-24
 
