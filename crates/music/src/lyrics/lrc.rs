@@ -719,12 +719,13 @@ fn read(line: &str) -> Vec<LyricsLine> {
         rest = tail.trim_start();
     }
 
+    let (rest, closed) = closed_at(rest);
     let (text, words) = spoken(rest);
     stamps
         .into_iter()
         .map(|start| LyricsLine {
             start,
-            end: None,
+            end: closed.filter(|end| *end > start),
             text: text.clone(),
             romanized: None,
             words: words.clone().map(|words| shifted(words, start)),
@@ -752,6 +753,24 @@ fn shifted(words: Vec<LyricsWord>, start: Duration) -> Vec<LyricsWord> {
             })
             .collect(),
     }
+}
+
+fn closed_at(rest: &str) -> (&str, Option<Duration>) {
+    let trimmed = rest.trim_end();
+    let Some(body) = trimmed.strip_suffix(']') else {
+        return (rest, None);
+    };
+    let Some((text, stamp)) = body.rsplit_once('[') else {
+        return (rest, None);
+    };
+    let Some(at) = stamp_of(stamp) else {
+        return (rest, None);
+    };
+    let text = text.trim_end();
+    if text.is_empty() {
+        return (rest, None);
+    }
+    (text, Some(at))
 }
 
 fn spoken(body: &str) -> (String, Option<Vec<LyricsWord>>) {
