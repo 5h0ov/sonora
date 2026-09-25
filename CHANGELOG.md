@@ -24,6 +24,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   stay in step with the player bar.
 - Sonora keeps the computer awake while music plays and if the fullscreen view is active, keeps
   the screen on as well. This can be disabled in settings.
+- Navidrome and other Subsonic servers now see what you play. The server's now-playing list
+  shows where you are in the track and whether it's paused, and play counts and recently played
+  update once you've listened long enough to scrobble.
 
 ### Changed
 

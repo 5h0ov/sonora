@@ -31,7 +31,7 @@ pub mod youtube;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -82,6 +82,14 @@ pub enum MediaKind {
     Album,
     Artist,
     Playlist,
+}
+
+/// What `MusicApi::report` tells the provider's server about the current track.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Report {
+    Playing,
+    Paused,
+    Stopped,
 }
 
 #[async_trait]
@@ -157,6 +165,20 @@ pub trait MusicApi: Send + Sync {
         anyhow::bail!("this provider does not support file deletion")
     }
     async fn track_playcount(&self, track_id: &str) -> Result<Option<u64>>;
+
+    /// Tells the provider's own server whether a track is playing and where it is. It is sent on
+    /// every start, pause, seek and stop, and never counts as a listen. A provider that keeps no
+    /// listening record keeps the default and makes no request.
+    async fn report(&self, _track_id: &str, _report: Report, _position: Duration) -> Result<()> {
+        Ok(())
+    }
+
+    /// Records a finished listen that started at `at` on the provider's own server. It is sent
+    /// at the same moment and under the same rules as a scrobble. A provider that keeps no
+    /// listening record keeps the default and makes no request.
+    async fn played(&self, _track_id: &str, _at: SystemTime) -> Result<()> {
+        Ok(())
+    }
     async fn playlists(&self) -> Result<Vec<Playlist>>;
     /// Changes the provider's own pin for `uri`, one of the uris `pin_targets` lists or
     /// `pin_uri` builds.

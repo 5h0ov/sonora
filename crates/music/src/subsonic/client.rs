@@ -1,11 +1,13 @@
 use std::collections::{HashMap, HashSet};
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result};
 use async_trait::async_trait;
 use opensubsonic::api::lists::AlbumListType;
 use opensubsonic::data::{AlbumId3, AlbumWithSongsId3, Child, Genre as SourceGenre};
 use opensubsonic::{Auth, Client};
+use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
 use crate::engine::Loudness;
@@ -14,7 +16,7 @@ use crate::subsonic::auth::Signature;
 use crate::subsonic::wire;
 use crate::{
     Album, AlbumCatalogue, AlbumDetail, Artist, ArtistProfile, Genre, GenreDetail, GenreItem,
-    GenreSection, HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, SUGGESTIONS,
+    GenreSection, HomeFeed, MediaKind, MusicApi, Playlist, PlaylistDetail, Report, SUGGESTIONS,
     SavedArtist, Track, UserProfile, distinct_covers,
 };
 
@@ -29,6 +31,8 @@ const HOME_ALBUMS: i32 = 12;
 const LIBRARY_PAGE: i32 = 500;
 const API_VERSION: &str = "1.16.1";
 const CLIENT_NAME: &str = "sonora";
+/// The OpenSubsonic extension that takes a playback position and state.
+const PLAYBACK_REPORT: &str = "playbackReport";
 
 #[derive(Clone)]
 pub struct SubsonicClient {
@@ -39,6 +43,8 @@ pub struct SubsonicClient {
     /// every url afresh, which would give one cover a new url on every conversion and defeat
     /// every image cache between here and the screen.
     covers: String,
+    /// Whether the server takes `reportPlayback`, asked the first time a report goes out.
+    playback_report: Arc<OnceCell<bool>>,
 }
 
 /// What the server records about a track that playback wants before the decoder can tell.
@@ -72,7 +78,27 @@ impl SubsonicClient {
             username,
             http: reqwest::Client::new(),
             covers,
+            playback_report: Arc::default(),
         })
+    }
+
+    /// Whether the server lists the `playbackReport` extension, asked once per client. A plain
+    /// Subsonic server has no extension list and answers with an error, which counts as no.
+    async fn reports_playback(&self) -> bool {
+        *self
+            .playback_report
+            .get_or_init(|| async {
+                match self.client.get_open_subsonic_extensions().await {
+                    Ok(extensions) => extensions
+                        .iter()
+                        .any(|extension| extension.name == PLAYBACK_REPORT),
+                    Err(error) => {
+                        log::info!("subsonic: the server lists no extensions: {error:#}");
+                        false
+                    }
+                }
+            })
+            .await
     }
 
     fn cover_url(&self, id: &str, size: i32) -> Option<String> {
@@ -406,6 +432,48 @@ impl MusicApi for SubsonicClient {
         Ok(song
             .and_then(|song| song.play_count)
             .map(|count| count as u64))
+    }
+
+    /// Sends the position and state through `reportPlayback`, with scrobbling left to `played`.
+    /// A server without the extension only hears that the track is playing, through the
+    /// now-playing form of `scrobble`, since it has nowhere to put a position.
+    async fn report(&self, track_id: &str, report: Report, position: Duration) -> Result<()> {
+        if !self.reports_playback().await {
+            return match report {
+                Report::Playing => self
+                    .client
+                    .scrobble(track_id, None, Some(false))
+                    .await
+                    .with_context(|| format!("cannot report {track_id} as playing")),
+                Report::Paused | Report::Stopped => Ok(()),
+            };
+        }
+        let state = match report {
+            Report::Playing => "playing",
+            Report::Paused => "paused",
+            Report::Stopped => "stopped",
+        };
+        let millis = i64::try_from(position.as_millis()).unwrap_or(i64::MAX);
+        self.client
+            .report_playback(track_id, "song", millis, state, None, Some(true))
+            .await
+            .with_context(|| format!("cannot report {track_id} as {state}"))
+    }
+
+    /// Subsonic takes the start of the listen in milliseconds since the epoch.
+    async fn played(&self, track_id: &str, at: SystemTime) -> Result<()> {
+        let millis = at
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        self.client
+            .scrobble(
+                track_id,
+                Some(i64::try_from(millis).unwrap_or(i64::MAX)),
+                Some(true),
+            )
+            .await
+            .with_context(|| format!("cannot record a play of {track_id}"))
     }
 
     async fn playlists(&self) -> Result<Vec<Playlist>> {
