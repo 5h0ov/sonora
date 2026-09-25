@@ -356,6 +356,7 @@ artist-appears-on = Appears on
 album-also-like = You might also like
 album-tab-albums = Albums
 album-tab-artists = Artists
+album-label = ℗ { $label }
 
 # user profile page
 user-eyebrow = Profile

@@ -130,7 +130,7 @@ impl SubsonicClient {
                 0 => String::new(),
                 _ => year.to_string(),
             },
-            label: String::new(),
+            label: wire::labels(detail.record_labels.as_deref()),
             copyrights: Vec::new(),
             added_at: None,
         }
